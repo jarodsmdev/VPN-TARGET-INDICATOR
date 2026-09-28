@@ -18,7 +18,7 @@
 
 set -e
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 REPO_URL="https://github.com/jarodsmdev/VPN-TARGET-INDICATOR"
 
 BASE="$HOME/.local/bin"
@@ -220,10 +220,72 @@ genmon_command() {
     xfconf-query -c xfce4-panel -p "/plugins/$1/command" 2>/dev/null || true
 }
 
+# Las versiones recientes de genmon (>= 4.1) guardan el periodo en
+# /update-period y en MILISEGUNDOS; las antiguas usaban /period y segundos.
+# Escribir la clave equivocada no da error: simplemente el panel ignora el
+# valor y se queda con el periodo que ya tuviera (30 s, 1 min...).
+genmon_period_key() {
+    local lib
+
+    lib="$(genmon_plugin_lib || true)"
+    if [ -n "$lib" ]; then
+        if grep -qa 'update-period' "$lib" 2>/dev/null; then
+            printf 'update-period\n'
+        else
+            printf 'period\n'
+        fi
+        return 0
+    fi
+
+    if xfconf-query -c xfce4-panel -p "/plugins/$1/update-period" >/dev/null 2>&1; then
+        printf 'update-period\n'
+    else
+        printf 'period\n'
+    fi
+}
+
+# Fija el periodo de refresco de un plugin, en segundos.
+set_genmon_period() {
+    local id="$1" secs="$2" key
+    key="$(genmon_period_key "$id")"
+
+    if [ "$key" = "update-period" ]; then
+        value=$((secs * 1000))
+    else
+        value="$secs"
+    fi
+
+    xfconf-query \
+        -c xfce4-panel \
+        -p "/plugins/$id/$key" \
+        -n -t int \
+        -s "$value" \
+        2>/dev/null || true
+}
+
+# Periodo configurado, ya expresado en segundos (para diagnóstico).
+genmon_period() {
+    local id="$1" key raw
+    key="$(genmon_period_key "$id")"
+    raw="$(xfconf-query -c xfce4-panel -p "/plugins/$id/$key" 2>/dev/null || true)"
+
+    case "$raw" in
+        ""|*[!0-9]*) printf 'sin periodo\n' ;;
+        *)
+            if [ "$key" = "update-period" ]; then
+                printf '%d.%03d s\n' $((raw / 1000)) $((raw % 1000))
+            else
+                printf '%d s\n' "$raw"
+            fi
+            ;;
+    esac
+}
+
 # Elige qué Generic Monitor usar. Prioridades:
 #   1) el que ya apunta a nuestro indicador
-#   2) el primero sin comando asignado
-#   3) el primero existente (preguntando antes de pisarlo)
+#   2) el que apunta a nuestros diálogos (se reconvierte en indicador)
+#   3) el primero sin comando asignado
+#   4) el primero existente (preguntando antes de pisarlo)
 panel_detect() {
     PLUGIN_ID=""
     PANEL_MSG=""
@@ -248,6 +310,17 @@ panel_detect() {
             PANEL_MSG="Generic Monitor existente reutilizado."
             return 0
         fi
+    done
+
+    for p in $plugins; do
+        cmd="$(genmon_command "${p##*/}")"
+        case "$cmd" in
+            *vpn-set-target*|*vpn-clear-target*)
+                PLUGIN_ID="${p##*/}"
+                PANEL_MSG="Generic Monitor $PLUGIN_ID reconvertido: apuntaba al diálogo, ahora al indicador."
+                return 0
+                ;;
+        esac
     done
 
     for p in $plugins; do
@@ -355,7 +428,9 @@ else
     echo "<tool>Clic para escribir un target (opcional)</tool>"
 fi
 
-echo "<txtclick>$GUI</txtclick>"
+# El token --click es lo que distingue "el usuario hizo clic" de "el panel me
+# ejecutó como comando": sin él, el diálogo se niega a abrir ventanas.
+echo "<txtclick>$GUI --click</txtclick>"
 INDICATOR_EOF
 }
 
@@ -374,8 +449,54 @@ export EGL_LOG_LEVEL=fatal
 TARGET_FILE="$HOME/.config/vpn-target"
 LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/vpn-set-target.lock"
 
+# IPv4 de verdad: cuatro octetos, cada uno 0-255 y sin ceros a la izquierda
+# (así "010" no se confunde con el octal de "8").
+valid_ipv4() {
+    local o oldifs="$IFS"
+    IFS=.
+    set -- $1
+    IFS="$oldifs"
+    [ "$#" -eq 4 ] || return 1
+    for o in "$@"; do
+        case "$o" in
+            0|[1-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]) ;;
+            *) return 1 ;;
+        esac
+    done
+    return 0
+}
+
+# Hostname: etiquetas de 1 a 63 caracteres alfanuméricos, con guiones
+# internos y sin empezar ni terminar en guion.
+valid_hostname() {
+    local h="$1" label oldifs="$IFS"
+    [ -n "$h" ] || return 1
+    [ "${#h}" -le 253 ] || return 1
+    IFS=.
+    set -- $h
+    IFS="$oldifs"
+    [ "$#" -ge 1 ] || return 1
+    for label in "$@"; do
+        [ "${#label}" -le 63 ] || return 1
+        case "$label" in
+            ''|*[!A-Za-z0-9-]*|[-]*|*-) return 1 ;;
+        esac
+    done
+    return 0
+}
+
+# Si el panel tiene este script como comando del Generic Monitor, lo ejecuta en
+# CADA refresco: abrir una ventana por ciclo es una pesadilla. Sólo mostramos el
+# diálogo si llega del clic del indicador (--click) o de una terminal; si lo
+# ejecuta el panel, avisamos en el panel en vez de abrir una ventana.
+if [ "${1:-}" != "--click" ] && [ ! -t 1 ]; then
+    echo "<txt>⚠ target: el panel no debe ejecutar este script</txt>"
+    echo "<tool>El comando del Generic Monitor debe ser vpn-indicator.sh (el target se escribe con un clic)</tool>"
+    exit 0
+fi
+
 # Evita diálogos apilados si el panel lanza este script varias veces seguidas
-# (por ejemplo, si quedó como comando de un Generic Monitor).
+# (por ejemplo, tras un clic rápido o doble).
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     OLDPID="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
@@ -394,13 +515,13 @@ fi
 
 if [ -n "$CURRENT" ]; then
     TEXT="Target actual: $CURRENT"
-    HINT="Escribí otra IP o hostname para reemplazarlo.
-Dejalo vacío y aceptá para BORRAR el target.
+    HINT="Escribe otra IP o hostname para reemplazarlo.
+Déjalo vacío y acepta para BORRAR el target.
 Cancelar no cambia nada."
 else
     TEXT="No hay target guardado."
     HINT="El target es opcional: sin él el indicador sólo muestra la VPN.
-Escribí la IP o el hostname de la máquina en la que estás trabajando.
+Escribe la IP o el hostname de la máquina en la que estás trabajando.
 Cancelar y no hacer nada más también está bien."
 fi
 
@@ -408,7 +529,7 @@ TEXT="$TEXT"$'\n\n'"$HINT"
 
 TARGET=$(zenity \
     --entry \
-    --title="Target (opcional)" \
+    --title="VPN TARGET INDICATOR" \
     --text="$TEXT" \
     --entry-text="$CURRENT" \
     --ok-label="Guardar" \
@@ -416,6 +537,9 @@ TARGET=$(zenity \
     --width=460) 2>/dev/null || exit 0
 
 TARGET="$(printf '%s' "$TARGET" | tr -d '[:space:]')"
+
+INVALID=""
+RAW="$TARGET"
 
 if [ -z "$TARGET" ]; then
 
@@ -426,28 +550,55 @@ if [ -z "$TARGET" ]; then
         "Target eliminado." \
         2>/dev/null || true
 
-elif [[ "$TARGET" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
-     [[ "$TARGET" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$ ]]; then
+    exit 0
 
-    printf '%s\n' "$TARGET" > "$TARGET_FILE"
+fi
 
-    notify-send \
-        "Target" \
-        "Target: $TARGET" \
-        2>/dev/null || true
+# "10.10.14.0/24" se acepta y se guarda sólo la IP.
+case "$TARGET" in
+    */*)
+        PREFIX="${TARGET##*/}"
+        REST="${TARGET#*/}"
+        TARGET="${TARGET%%/*}"
+        case "$REST" in
+            */*) INVALID=1 ;;
+        esac
+        if ! valid_ipv4 "$TARGET"; then
+            INVALID=1
+        elif ! printf '%s' "$PREFIX" | grep -qE '^[0-9]{1,2}$' ||
+             [ "$PREFIX" -gt 32 ]; then
+            INVALID=1
+        fi
+        ;;
+    *[!0-9.]*)
+        valid_hostname "$TARGET" || INVALID=1
+        ;;
+    *)
+        valid_ipv4 "$TARGET" || INVALID=1
+        ;;
+esac
 
-else
+if [ -n "$INVALID" ]; then
 
     zenity \
         --error \
         --title="Target" \
-        --text="\"$TARGET\" no es una IP ni un hostname válido.
+        --text="\"$RAW\" no es una IP ni un hostname válido.
 
-Opciones:  10.10.14.5   ·   dc01   ·   dc01.lab
-Podés cancelar y seguir trabajando sin target." \
+Opciones:  10.10.14.5   ·   10.10.14.0/24   ·   dc01   ·   dc01.lab
+Puedes cancelar y seguir trabajando sin target." \
         2>/dev/null
 
+    exit 1
+
 fi
+
+printf '%s\n' "$TARGET" > "$TARGET_FILE"
+
+notify-send \
+    "Target" \
+    "Target: $TARGET" \
+    2>/dev/null || true
 GUI_EOF
 }
 
@@ -472,20 +623,86 @@ step_chmod() {
 # Pasos: panel XFCE
 # ------------------------------------------------
 
-step_panel() {
+# Los plugins que este instalador maneja. El reinicio del panel los reaplica:
+# al pararlo, el panel viejo vuelve a escribir su comando en memoria (el
+# anterior, no el que acabamos de escribir), así que hay que volver a imponer
+# la configuración con el panel ya parado.
+PANEL_OWNED=()
+
+# Escribe comando y periodo de un plugin. Idempotente: se puede volver a llamar
+# después de reiniciar el panel sin miedo.
+apply_panel_config() {
     xfconf-query \
         -c xfce4-panel \
-        -p "/plugins/$PLUGIN_ID/command" \
+        -p "/plugins/$1/command" \
         -n -t string \
         -s "$IND" \
         2>/dev/null || true
 
-    xfconf-query \
-        -c xfce4-panel \
-        -p "/plugins/$PLUGIN_ID/period" \
-        -n -t int \
-        -s 2 \
-        2>/dev/null || true
+    set_genmon_period "$1" 2
+
+    case " ${PANEL_OWNED[*]:-} " in
+        *" $1 "*) ;;
+        *) PANEL_OWNED+=("$1") ;;
+    esac
+}
+
+# Para el panel y espera a que el proceso muera.
+panel_stop() {
+    local i pid
+
+    pgrep -x xfce4-panel >/dev/null 2>&1 || return 0
+
+    xfce4-panel -q >/dev/null 2>&1 || pkill -x xfce4-panel >/dev/null 2>&1 || true
+
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        pid="$(pgrep -x xfce4-panel || true)"
+        [ -z "$pid" ] && return 0
+        sleep 0.3
+    done
+
+    pkill -x xfce4-panel >/dev/null 2>&1 || true
+    sleep 1
+    return 0
+}
+
+# Levanta el panel y espera a que esté en pie.
+panel_start() {
+    local i
+
+    pgrep -x xfce4-panel >/dev/null 2>&1 && return 0
+
+    setsid xfce4-panel >/dev/null 2>&1 </dev/null &
+
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -x xfce4-panel >/dev/null 2>&1 && return 0
+        sleep 0.5
+    done
+
+    return 0
+}
+
+# El Generic Monitor lee su comando UNA sola vez, al construirse el plugin: con
+# el panel vivo, escribir la propiedad no cambia lo que se está ejecutando.
+# Peor: el panel viejo vuelve a guardar en xfconf el comando que tenía en
+# memoria, así que el valor recién escrito se pierde. La secuencia que sí
+# funciona es parar el panel, escribir la configuración y volver a levantarlo.
+step_panel_restart() {
+    local id
+
+    panel_stop
+
+    for id in ${PANEL_OWNED+"${PANEL_OWNED[@]}"}; do
+        apply_panel_config "$id"
+    done
+
+    [ -n "$PLUGIN_ID" ] && apply_panel_config "$PLUGIN_ID"
+
+    panel_start
+}
+
+step_panel() {
+    apply_panel_config "$PLUGIN_ID"
 
     echo "$PLUGIN_ID" > "$STATE_FILE"
 }
@@ -528,20 +745,50 @@ panel_needs_fix() {
     panel_wrong_plugins >/dev/null 2>&1
 }
 
+# Una línea de diagnóstico por plugin: qué comando tiene, cada cuánto corre y
+# si el comando existe siquiera en el disco.
+panel_plugin_line() {
+    local id="$1" cmd per
+    cmd="$(genmon_command "$id")"
+    per="$(genmon_period "$id")"
+
+    case "$cmd" in
+        "")
+            printf '  %s%s%s %ssin comando%s %s(%s)%s\n' \
+                "$B" "$id" "$R" "$DIM" "$R" "$DIM" "$per" "$R"
+            ;;
+        *vpn-indicator.sh*)
+            printf '  %s%s%s %s✔ indicador%s %s(%s)%s\n' \
+                "$B" "$id" "$R" "$GRN" "$R" "$DIM" "$per" "$R"
+            ;;
+        *vpn-set-target*|*vpn-clear-target*)
+            printf '  %s%s%s %s✘ apunta al diálogo: el panel lo abriría cada %s%s\n' \
+                "$B" "$id" "$R" "$RED" "$per" "$R"
+            ;;
+        *' '*)
+            printf '  %s%s%s %s→ %s%s %s(%s)%s\n' \
+                "$B" "$id" "$R" "$DIM" "$cmd" "$R" "$DIM" "$per" "$R"
+            ;;
+        *)
+            if [ ! -e "$cmd" ]; then
+                printf '  %s%s%s %s✘ no existe: %s%s %s(%s)%s\n' \
+                    "$B" "$id" "$R" "$RED" "$cmd" "$R" "$DIM" "$per" "$R"
+            else
+                printf '  %s%s%s %s→ %s%s %s(%s)%s\n' \
+                    "$B" "$id" "$R" "$DIM" "$cmd" "$R" "$DIM" "$per" "$R"
+            fi
+            ;;
+    esac
+}
+
 step_fix_panel() {
     local plugins p cmd
-    plugins="$(genmon_plugins)"
 
-    for p in $plugins; do
+    for p in $(genmon_plugins); do
         cmd="$(genmon_command "${p##*/}")"
         case "$cmd" in
             *vpn-set-target*|*vpn-clear-target*)
-                xfconf-query \
-                    -c xfce4-panel \
-                    -p "/plugins/${p##*/}/command" \
-                    -n -t string \
-                    -s "$IND" \
-                    2>/dev/null || true
+                apply_panel_config "${p##*/}"
                 echo "${p##*/} corregido"
                 ;;
         esac
@@ -552,11 +799,15 @@ step_fix_panel() {
 # Pasos: desinstalación
 # ------------------------------------------------
 
-step_unpanel() {
-    local plugins p cmd
-    plugins="$(genmon_plugins)"
+UNPANEL_IDS=()
 
-    for p in $plugins; do
+# Vacía el comando de cada plugin que apunta a nuestro indicador y recuerda
+# cuáles son, para poder reaplicarlo tras reiniciar el panel (el panel viejo
+# vuelve a escribir su comando en memoria al guardarlo).
+step_unpanel() {
+    local p cmd
+
+    for p in $(genmon_plugins); do
         cmd="$(genmon_command "${p##*/}")"
         if [ "$cmd" = "$IND" ]; then
             xfconf-query \
@@ -565,12 +816,8 @@ step_unpanel() {
                 -n -t string \
                 -s "" \
                 2>/dev/null || true
-            xfconf-query \
-                -c xfce4-panel \
-                -p "/plugins/${p##*/}/period" \
-                -n -t int \
-                -s 0 \
-                2>/dev/null || true
+            set_genmon_period "${p##*/}" 0
+            UNPANEL_IDS+=("${p##*/}")
             echo "plugin" >/dev/null
         fi
     done
@@ -581,7 +828,25 @@ step_rm_gui()       { rm -f "$GUI"; }
 step_rm_clear()     { rm -f "$CLR"; }
 step_rm_target()    { rm -f "$TARGET_FILE"; }
 step_rm_state()     { rm -f "$STATE_FILE"; }
-step_reload_panel() { xfce4-panel -r >/dev/null 2>&1 || true; }
+# Reinicio seguro: para el panel, reaplica los comandos vacíos (para que el que
+# se levanta ya lea la configuración nueva) y lo vuelve a levantar.
+step_reload_panel() {
+    local id
+
+    panel_stop
+
+    for id in ${UNPANEL_IDS+"${UNPANEL_IDS[@]}"}; do
+        xfconf-query \
+            -c xfce4-panel \
+            -p "/plugins/$id/command" \
+            -n -t string \
+            -s "" \
+            2>/dev/null || true
+        set_genmon_period "$id" 0
+    done
+
+    panel_start
+}
 
 # ------------------------------------------------
 # Validadores de compatibilidad
@@ -776,6 +1041,7 @@ do_install() {
     local need_zenity=0
     local need_fix=0
     local do_panel=0
+    local p
 
     section "COMPROBANDO COMPATIBILIDAD"
     check_compat
@@ -790,23 +1056,41 @@ do_install() {
 
     command -v zenity >/dev/null 2>&1 || need_zenity=1
 
-    panel_needs_fix && need_fix=1 || need_fix=0
+    # Escape para probar el script sin tocar el panel real: con VPN_TI_SKIP_PANEL
+    # no se lee, no se escribe y no se reinicia nada del panel (ver
+    # CONTRIBUTING.md). Sin esto, probar con un HOME temporal reconfiguraría
+    # el panel de la sesión de verdad.
+    if [ "${VPN_TI_SKIP_PANEL:-}" = 1 ]; then
+        PLUGIN_ID=""
+        PANEL_MSG="VPN_TI_SKIP_PANEL=1: no se tocó el panel."
+    else
+        panel_needs_fix && need_fix=1 || need_fix=0
 
-    if [ "$need_fix" = 1 ]; then
-        printf '\n  %s✘ El panel tiene un Generic Monitor apuntando al diálogo:%s\n' "$RED" "$R"
-        panel_wrong_plugins
-        printf '  %sCon esa configuración el panel abre esa ventana cada 2 s.%s\n' "$YEL" "$R"
-        printf '  %sEl comando correcto es:%s %s%s\n' "$DIM" "$R" "$IND" "$R"
-        printf '  %sSe corrige automáticamente al final de la instalación.%s\n' "$DIM" "$R"
-        printf '\n'
+        if [ "$need_fix" = 1 ]; then
+            printf '\n  %s✘ El panel tiene un Generic Monitor apuntando al diálogo:%s\n' "$RED" "$R"
+            for p in $(genmon_plugins); do
+                case "$(genmon_command "${p##*/}")" in
+                    *vpn-set-target*|*vpn-clear-target*)
+                        panel_plugin_line "${p##*/}"
+                        ;;
+                esac
+            done
+            printf '  %sCon esa configuración el panel abre esa ventana en cada refresco.%s\n' "$YEL" "$R"
+            printf '  %sEl comando correcto es:%s %s%s\n' "$DIM" "$R" "$IND" "$R"
+            printf '  %sSe corrige automáticamente al final de la instalación.%s\n' "$DIM" "$R"
+            printf '\n'
+        fi
+
+        panel_detect
+        [ -n "$PLUGIN_ID" ] && do_panel=1
     fi
 
-    panel_detect
-    [ -n "$PLUGIN_ID" ] && do_panel=1
+    need_restart=0
+    { [ "$do_panel" = 1 ] || [ "$need_fix" = 1 ]; } && need_restart=1
 
-    # 9 pasos fijos + zenity (si falta)
-    # + corrección del panel (si algo apunta al diálogo) - panel (si no aplica)
-    TOTAL=$((9 + need_zenity + need_fix))
+    # 9 pasos fijos + zenity (si falta) + corrección del panel (si algo apunta
+    # al diálogo) + reinicio del panel - panel (si no aplica)
+    TOTAL=$((9 + need_zenity + need_fix + need_restart))
     [ "$do_panel" = 1 ] || TOTAL=$((TOTAL - 1))
     STEP=0
     DETAIL=()
@@ -835,6 +1119,10 @@ do_install() {
         run_step "Corrigiendo comando del panel"        step_fix_panel
     fi
 
+    if [ "$need_restart" = 1 ]; then
+        run_step "Reiniciando el panel"                 step_panel_restart
+    fi
+
     run_step "Probando el indicador"                  step_test
 
     if [ "$TTY" = 1 ]; then
@@ -858,8 +1146,8 @@ do_install() {
     fi
 
     if [ "$do_panel" = 1 ]; then
-        printf '    %svpn-panel-plugin%s   %s del panel (periodo 2s)\n' \
-            "$GRN" "$R" "$PLUGIN_ID"
+        printf '    %svpn-panel-plugin%s   %s del panel (periodo %s)\n' \
+            "$GRN" "$R" "$PLUGIN_ID" "$(genmon_period "$PLUGIN_ID")"
     fi
 
     printf '\n  %sPrueba del indicador:%s\n' "$B" "$R"
@@ -877,6 +1165,11 @@ do_install() {
     printf '  %sCancelar:%s no cambia nada. El target es opcional.\n' "$B" "$R"
     printf '  %sSin target:%s el indicador muestra solo %s🔒 VPN: OFF%s o %s🔒 VPN: 10.10.2.2%s.\n' \
         "$B" "$R" "$B" "$R" "$B" "$R"
+    if [ "$need_restart" = 1 ]; then
+        printf '  %sEl panel se reinició:%s el Generic Monitor sólo lee su comando al arrancar.\n' \
+            "$DIM" "$R"
+        printf '  %sSi lo editás a mano, el campo Comando debe ser:%s %s\n' "$DIM" "$R" "$IND"
+    fi
     printf '\n'
 }
 
@@ -891,7 +1184,9 @@ do_uninstall() {
     local do_reload=0
     local had_files=0
 
-    if command -v xfconf-query >/dev/null 2>&1; then
+    if [ "${VPN_TI_SKIP_PANEL:-}" = 1 ]; then
+        do_panel=0
+    elif command -v xfconf-query >/dev/null 2>&1; then
         local plugins p cmd
         plugins="$(genmon_plugins)"
         for p in $plugins; do
@@ -974,7 +1269,7 @@ do_uninstall() {
 # ------------------------------------------------
 
 do_status() {
-    local plugins p cmd n=0
+    local p n=0
 
     section "ARCHIVOS"
 
@@ -998,7 +1293,7 @@ do_status() {
 
     printf '  %s%s/3 scripts instalados%s\n' "$DIM" "$n" "$R"
 
-    section "TARGET (opcional)"
+    section "TARGET"
 
     if [ -f "$TARGET_FILE" ]; then
         printf '  %svpn-target%s = %s\n' "$GRN" "$R" "$(cat "$TARGET_FILE")"
@@ -1014,22 +1309,7 @@ do_status() {
         printf '  %sno hay ningún Generic Monitor en el panel%s\n' "$YEL" "$R"
     else
         for p in $(genmon_plugins); do
-            cmd="$(genmon_command "${p##*/}")"
-            case "$cmd" in
-                "")
-                    printf '  %s%s%s %ssin comando%s\n' "$B" "${p##*/}" "$R" "$DIM" "$R"
-                    ;;
-                *vpn-set-target*|*vpn-clear-target*)
-                    printf '  %s%s%s %s✘ apunta al diálogo: el panel lo abriría cada 2 s%s\n' \
-                        "$B" "${p##*/}" "$R" "$RED" "$R"
-                    ;;
-                *vpn-indicator.sh*)
-                    printf '  %s%s%s %s✔ indicador%s\n' "$B" "${p##*/}" "$R" "$GRN" "$R"
-                    ;;
-                *)
-                    printf '  %s%s%s %s→ %s%s\n' "$B" "${p##*/}" "$R" "$DIM" "$cmd" "$R"
-                    ;;
-            esac
+            panel_plugin_line "${p##*/}"
         done
     fi
 
@@ -1052,6 +1332,7 @@ banner() {
     printf '\n%s==============================================%s\n' "$CYN" "$R"
     printf '%s     VPN TARGET INDICATOR  %sv%s%s\n' "$B" "$DIM" "$VERSION" "$R"
     printf '%s==============================================%s\n' "$CYN" "$R"
+    printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
 }
 
 section() {
@@ -1079,7 +1360,6 @@ status_line() {
 usage() {
     printf '  %sUso:%s %s [instalar|estado|desinstalar|salir]\n' \
         "$B" "$R" "$(basename "$0")"
-    printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
     printf '\n'
 }
 
@@ -1129,7 +1409,6 @@ main() {
         printf '  %s3%s)  Desinstalar\n' "$B" "$R"
         printf '  %s4%s)  Salir\n' "$B" "$R"
         printf '\n'
-        printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
         printf '\n'
         printf '  Elige una opción [1-4]: '
         read -r opt || opt=4

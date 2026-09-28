@@ -35,12 +35,40 @@ bash -n vpn-target-indicator.sh          # sintaxis
 shellcheck vpn-target-indicator.sh       # análisis estático (opcional)
 ```
 
-Probá en un entorno aislado, sin tocar tu instalación real:
+Probá en un entorno aislado, sin tocar tu instalación real. `VPN_TI_SKIP_PANEL=1`
+es **obligatorio** en ese caso: sin él, la instalación lee y reescribe la
+configuración del panel de tu sesión de verdad y lo reinicia (aunque los
+scripts se يريد en el `HOME` temporal).
 
 ```bash
-HOME=$(mktemp -d) ./vpn-target-indicator.sh instalar
-HOME=$(mktemp -d) ./vpn-target-indicator.sh desinstalar
+HOME=$(mktemp -d) VPN_TI_SKIP_PANEL=1 ./vpn-target-indicator.sh instalar
+HOME=$(mktemp -d) VPN_TI_SKIP_PANEL=1 ./vpn-target-indicator.sh desinstalar
 ```
+
+Con el panel real, probá siempre sobre una máquina de pruebas o con un panel
+respaldo listo (`xfce4-panel &` a mano): instalar **reinicia el panel**.
+
+```bash
+VPN_TI_SKIP_PANEL=1 ./vpn-target-indicator.sh instalar | grep SKIP_PANEL
+# VPN_TI_SKIP_PANEL=1: no se tocó el panel.
+```
+
+### Probar los cambios de panel
+
+Los pasos que tocan el panel (`step_panel`, `step_fix_panel`, `step_panel_restart`,
+`step_unpanel`, `step_reload_panel`) se pueden exertar por separado sin instalar
+nada, sourcing el script con `main` neutralizado:
+
+```bash
+sed 's/^main "/function main "/' vpn-target-indicator.sh > /tmp/vti-noexec.sh
+. /tmp/vti-noexec.sh
+genmon_period_key            # update-period o period, según la versión instalada
+panel_detect; echo "$PLUGIN_ID:$PANEL_MSG"
+panel_plugin_line plugin-23
+```
+
+Recordá que el panel vivo pisa lo que escribas en `xfconf` al guardarse: para
+probar un valor real, usá `panel_stop` → escribí → `panel_start`.
 
 Verificá también el modo desatendido, que es el que usan los instaladores de
 distribución:

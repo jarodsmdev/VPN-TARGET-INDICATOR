@@ -5,6 +5,52 @@ Todas las novedades relevantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 el versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [1.2.0] - 2026-09-27
+
+### Corregido
+
+- **El periodo del panel nunca se aplicaba.** El instalador escribía
+  `/plugins/<id>/period` en segundos, pero las versiones actuales de *Generic
+  Monitor* (≥ 4.1, entre ellas la de Kali) leen `/plugins/<id>/update-period` en
+  **milisegundos**. La propiedad vieja no da error: el panel la ignora y se
+  queda con el periodo que ya tuviera (30 s, 1 min…), así que el indicador no se
+  refrescaba cada 2 s. Ahora se detecta qué clave usa el genmon instalado
+  (`genmon_period_key`) y se escribe el periodo correcto, también al corregir un
+  plugin mal configurado y al desinstalar.
+- **Un *Generic Monitor* con el diálogo ya no puede abrir ventanas solo.** Si el
+  panel ejecutaba `vpn-set-target` en cada refresco, aparecía una ventana tras
+  otra. El indicador ahora pasa el token `--click` en su `<txtclick>` y el
+  diálogo sólo se abre con ese token o desde una terminal; si lo ejecuta el
+  panel, no abre nada y muestra en su lugar un aviso de que el comando mal
+  configurado es `vpn-set-target`.
+- **La validación del target era la que decía no ser.** Aceptaba cualquier
+  cuádruplo con puntos (`999.999.999.999`, `10.10.14.5.6`, `010.10.14.5`) y
+  rechazaba el CIDR que el README prometía. Ahora valida octetos 0-255, prefijo
+  `/0`-`/32` (guardando sólo la IP) y hostnames con etiquetas correctas.
+- **El instalador ya no pisa el *Generic Monitor* equivocado.** Al detectar que
+  un plugin apunta a nuestros diálogos, lo reconvierte en indicador en vez de
+  ofrecerte sobrescribir otro monitor del panel.
+
+- **La instalación no se terminaba de aplicar.** El *Generic Monitor* lee su
+  comando una sola vez, al construirse el plugin, y el panel vivo vuelve a
+  escribir en `xfconf` el comando que tenía en memoria al guardarse. Resultado:
+  o bien el panel seguía con el comando viejo, o bien el valor nuevo se perdía
+  en el siguiente guardado. La instalación ahora termina con un reinicio
+  seguro del panel (parar → escribir la configuración → levantar), igual que la
+  desinstalación, y avisa de que el campo *Comando* debe ser la ruta del
+  indicador.
+
+- Las pruebas documentadas en `CONTRIBUTING.md` (`HOME=$(mktemp -d) …`) ya no
+  son seguras por lo de arriba: reconfiguraban y reiniciaban el panel real.
+  Ahora se prueba con `VPN_TI_SKIP_PANEL=1`, que omite por completo todo lo que
+  toca el panel.
+
+### Añadido
+
+- `estado` informa, por cada *Generic Monitor*, el periodo real configurado y
+  avisa si el comando no existe en el disco (la causa de los errores que
+  *Generic Monitor* pinta en el panel).
+
 ## [1.1.0] - 2026-09-27
 
 ### Corregido
@@ -71,5 +117,6 @@ el versionado semántico ([SemVer](https://semver.org/lang/es/)).
 - La documentación habla de "clic" y no de "clic izquierdo": `<txtclick>` del
   *Generic Monitor* se ejecuta con cualquier clic sobre el texto.
 
+[1.2.0]: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR/releases/tag/v1.0.0

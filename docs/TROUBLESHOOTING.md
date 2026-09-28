@@ -27,16 +27,26 @@ Comprobá el estado del plugin en el panel:
 xfconf-query -c xfce4-panel -lv | grep genmon
 ```
 
-Deberías ver `command` apuntando a `~/.local/bin/vpn-indicator.sh` y
-`period = 2`.
+Deberías ver `command` apuntando a `~/.local/bin/vpn-indicator.sh` y el periodo
+en `update-period = 2000` (milisegundos). Los *Generic Monitor* antiguos usan
+`period = 2` (segundos): los dos significan 2 s, pero escribí la que corresponda
+a tu versión o el panel la ignora en silencio.
+
 
 ---
 
-## El diálogo del target se abre solo (cada 2 segundos)
+## El diálogo del target se abre solo (en cada refresco)
 
 **Causa:** el *Generic Monitor* del panel tiene como comando el diálogo
-(`vpn-set-target`) en lugar del indicador. El panel lo ejecuta cada 2 segundos,
-así que se abre una ventana tras otra; al aceptar una, se abre la siguiente.
+(`vpn-set-target`) en lugar del indicador. El panel lo ejecuta cada pocos
+segundos, así que se abre una ventana tras otra; al aceptar una, se abre la
+siguiente. Da igual lo que escribas: la IP se guarda y el diálogo vuelve a
+aparecer.
+
+Desde la 1.2.0 el diálogo se niega a abrirse en ese caso (el indicador le pasa
+un token `--click`) y el panel muestra en su lugar
+`⚠ target: el panel no debe ejecutar este script`: si ves ese aviso, ya sabés
+que el comando mal configurado es `vpn-set-target`.
 
 **Comprobación:**
 
@@ -65,7 +75,56 @@ El diálogo se abre con un **clic** sobre el indicador, no solo.
 
 > Kali trae su propio indicador de VPN en
 > `/usr/share/kali-themes/xfce4-panel-genmon-vpnip.sh`. Si ya lo usás, podés
-> dejar el nuestro apuntando sólo al target o borrar uno de los dos.
+> dejar el nuestro apuntando sólo al target o borrar uno de los dos. El
+> instalador sólo pisa un *Generic Monitor* propio: si encuentra otro que ya
+> apunta a nuestros scripts, lo reconvierte, y si no, pregunta antes de
+> tocar uno ajeno.
+
+---
+
+## El panel muestra `not found` o `Error in command`
+
+**Causa:** el campo *Comando* del *Generic Monitor* apunta a un archivo que no
+existe —típico si desinstalaste, si borraste `~/.local/bin` o si instalaste con
+`sudo`—. *Generic Monitor* ≥ 4.1 muestra en el panel la salida de error del
+comando y además avisa con un diálogo `Error in command "…"`.
+
+**Comprobación:**
+
+```bash
+ls -l ~/.local/bin/vpn-*
+./vpn-target-indicator.sh estado
+```
+
+`estado` marca con `✘ no existe:` el plugin cuyo comando no está en disco.
+
+**Solución:** reinstalar como tu usuario de escritorio (sin `sudo`):
+
+```bash
+./vpn-target-indicator.sh instalar
+```
+
+---
+
+## El panel no se actualiza cada 2 segundos
+
+**Causa:** el *Generic Monitor* instalado es de los que guardan el periodo en
+`period` (segundos) y no en `update-period` (milisegundos), o al revés. La
+propiedad equivocada no da ningún error: el panel la ignora y se queda con el
+periodo que ya tuviera (a veces 30 s o 1 minuto), y por eso el diálogo mal
+configurado "volvía a aparecer" cada tanto en vez de cada 2 segundos.
+
+**Comprobación:** `./vpn-target-indicator.sh estado` muestra el periodo real de
+cada plugin entre paréntesis.
+
+**Solución:** `instalar` lo detecta y escribe la clave correcta; a mano:
+
+```bash
+# genmon actual
+xfconf-query -c xfce4-panel -p /plugins/<id>/update-period -n -t int -s 2000
+# genmon antiguo
+xfconf-query -c xfce4-panel -p /plugins/<id>/period -n -t int -s 2
+```
 
 ---
 
@@ -154,7 +213,11 @@ Para WireGuard, cambiá `tun0` por `wg0` y `pgrep -x openvpn` por
 ## La ventana de escribir el target no aparece
 
 1. Verificá que `zenity` está instalado: `command -v zenity`.
-2. Probá el script directamente: `~/.local/bin/vpn-set-target`.
+2. Probá el script directamente: `~/.local/bin/vpn-set-target`. Desde una
+   terminal se abre siempre; si lo redirigís a un archivo o a otro programa
+   (y por eso no hay terminal), imprime el aviso de "el panel no debe ejecutar
+   este script" en vez de la ventana: es la protección contra el bucle de
+   diálogos.
 3. Si cancelás el diálogo, el script termina con `exit 0` sin cambios: es el
    comportamiento esperado, no un error.
 

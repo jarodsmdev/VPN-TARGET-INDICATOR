@@ -6,7 +6,7 @@
 <img src="https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white" alt="Bash">
 <img src="https://img.shields.io/badge/Licen%20se-MIT-blue?style=for-the-badge" alt="Licencia MIT">
 <img src="https://img.shields.io/badge/Plataforma-Linux-FFD700?style=for-the-badge&logo=linux&logoColor=black" alt="Linux">
-<img src="https://img.shields.io/badge/versi%C3%B3n-1.1.0-8A2BE2?style=for-the-badge" alt="Version 1.1.0">
+<img src="https://img.shields.io/badge/versi%C3%B3n-1.2.0-8A2BE2?style=for-the-badge" alt="Version 1.2.0">
 
 **Indicador de escritorio para XFCE que muestra en el panel el estado de tu VPN y la IP del target en el que estás trabajando.**
 
@@ -41,9 +41,9 @@ respuesta válida.
   `~/.config/vpn-target`; sin archivo, el indicador funciona igual.
 - **Un clic para escribirlo** — diálogo `zenity` con botones `Guardar` /
   `Cancelar` y el valor actual precargado. Acepta IPv4, IPv4 con CIDR
-  (`10.10.14.0/24`) y hostnames (`dc01.lab`).
+  (`10.10.14.0/24`, se guarda sólo la IP) y hostnames (`dc01.lab`).
 - **Sin diálogos apilados** — un lock evita que se abran varias ventanas a la
-  vez aunque el panel lance el script varias veces.
+  vez, y el token `--click` impide que el panel abra el diálogo por su cuenta.
 - **Sin recompilar nada** — el indicador es un script de Bash que el
   *Generic Monitor* ejecuta cada 2 segundos.
 - **Menú interactivo** — instalador con barra de progreso, validaciones de
@@ -96,14 +96,21 @@ curl -fsSL https://raw.githubusercontent.com/jarodsmdev/vpn-target-indicator/mai
 > Ejecuta el script **como tu usuario de escritorio**, nunca como `root`: los
 > archivos se instalan en tu `$HOME` y el panel sólo los ve en tu sesión.
 
+> La instalación **reinicia el panel de XFCE** (parpadea un segundo). No es
+> un capricho: el *Generic Monitor* lee su comando una sola vez, al construirse
+> el plugin, y el panel vivo vuelve a escribir en su configuración el comando
+> que tiene en memoria. La única secuencia que funciona es parar el panel,
+> escribir la configuración y volver a levantarlo.
+
 ## Uso
 
 Al ejecutarlo sin argumentos se abre el menú:
 
 ```
 ==============================================
-     VPN TARGET INDICATOR  v1.1.0
+     VPN TARGET INDICATOR  v1.2.0
 ==============================================
+  Repo: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR
 
   Estado: 3/3 scripts en /home/tu/.local/bin │ target 10.10.14.42
 
@@ -112,15 +119,14 @@ Al ejecutarlo sin argumentos se abre el menú:
   3)  Desinstalar
   4)  Salir
 
-  Repo: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR
 
   Elige una opción [1-4]:
 ```
 
 1. **Instalar / reinstalar** — valida el entorno, migra una instalación
    anterior si existe, audita y corrige el panel, instala `zenity` si hace
-   falta, escribe los tres scripts, engancha el *Generic Monitor* y prueba el
-   indicador.
+   falta, escribe los tres scripts, engancha el *Generic Monitor*, reinicia el
+   panel para que el cambio tome efecto y prueba el indicador.
 2. **Estado / diagnóstico** — muestra qué scripts están instalados, el target
    guardado, qué *Generic Monitor* apunta a qué y cuál es la salida real del
    indicador. Es la herramienta para diagnosticar problemas de panel.
@@ -162,7 +168,8 @@ curl -fsSL https://raw.githubusercontent.com/jarodsmdev/vpn-target-indicator/mai
 | `~/.local/bin/vpn-clear-target` | Borra el target y avisa por `notify-send` |
 | `~/.config/vpn-target` | Target actual (una línea con la IP) |
 | `~/.config/vpn-panel-plugin` | ID del plugin del panel que quedó configurado |
-| `xfce4-panel` → `/plugins/<id>/command` | Ruta al indicador, con `period = 2` (segundos) |
+| `xfce4-panel` → `/plugins/<id>/command` | Ruta al indicador |
+| `xfce4-panel` → `/plugins/<id>/update-period` | Periodo de refresco en **milisegundos** (`2000` = 2 s). Los *Generic Monitor* antiguos usan `/period`, en segundos |
 
 ### ⚠ Importante: el comando del Generic Monitor
 
@@ -174,9 +181,11 @@ En *Configuración del panel ▸ Elementos ▸ Generic Monitor ▸ Editar*, el c
 ```
 
 **Nunca** pongas `vpn-set-target` ni `vpn-clear-target` ahí. Son los diálogos: si
-el panel los ejecuta cada 2 segundos, se abriría una ventana tras otra y
-parecería que el target se pide solo. El instalador detecta esa configuración y
-la corrige, pero si lo hacés a mano, `estado` te lo dice:
+el panel los ejecuta en cada refresco, se abriría una ventana tras otra y
+parecería que el target se pide solo. Desde la 1.2.0 el diálogo **se niega a
+abrirse** si no lo lanzó el clic del indicador y, en su lugar, el panel muestra
+un aviso; el instalador además detecta esa configuración y la corrige. Si lo
+hacés a mano, `estado` te lo dice:
 
 ```bash
 ./vpn-target-indicator.sh estado
@@ -218,8 +227,10 @@ tun0 + proceso openvpn  ──►  vpn-indicator.sh  ──►  Generic Monitor 
 2. Si las tres condiciones se cumplen imprime `VPN: <ip>`; en caso contrario
    `VPN: OFF`.
 3. Si existe `~/.config/vpn-target`, añade `🎯 TARGET: <ip>` a la misma línea.
-4. El último `<txtclick>` apunta a `vpn-set-target`, que valida la IP con una
-   expresión regular y escribe (o borra) el archivo de target.
+4. El último `<txtclick>` apunta a `vpn-set-target --click`. Ese token es lo que
+   distingue el clic del refresco automático: el diálogo valida la IP (IPv4,
+   IPv4 con CIDR o hostname), escribe el archivo de target y, si el campo vino
+   vacío, lo borra.
 
 El detalle completo, incluidos los criterios de detección y la selección del
 plugin, está en **[docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md)**.
@@ -229,7 +240,7 @@ plugin, está en **[docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md)**.
 | Qué | Dónde | Por defecto |
 | --- | --- | --- |
 | Interfaz de la VPN | `vpn-indicator.sh` → `tun0` | `tun0` |
-| Periodo de refresco | `xfconf-query -c xfce4-panel -p /plugins/<id>/period` | `2` segundos |
+| Periodo de refresco | `xfconf-query -c xfce4-panel -p /plugins/<id>/update-period` | `2000` (ms) |
 | ID del plugin usado | `~/.config/vpn-panel-plugin` | elegido por el instalador |
 | Emojis del panel | `vpn-indicator.sh` → `echo "<txt>🔒 …"` | `🔒` y `🎯` |
 
@@ -258,7 +269,11 @@ Resumen rápido; la guía completa está en
 
 | Síntoma | Causa probable | Solución |
 | --- | --- | --- |
-| **El diálogo del target se abre solo, cada 2 s** | El *Generic Monitor* apunta a `vpn-set-target` en vez del indicador | `./vpn-target-indicator.sh instalar` lo corrige, o poné `vpn-indicator.sh` en *Editar ▸ Comando* |
+| **El diálogo del target se abre solo, en cada refresco** | El *Generic Monitor* apunta a `vpn-set-target` en vez del indicador | `./vpn-target-indicator.sh instalar` lo corrige, o poné `vpn-indicator.sh` en *Editar ▸ Comando* |
+| El panel muestra `⚠ target: el panel no debe ejecutar este script` | El *Generic Monitor* está ejecutando el diálogo en vez del indicador: el diálogo se niega a abrir ventanas y avisa en el panel | Es el mismo caso de la fila anterior: el comando debe ser `~/.local/bin/vpn-indicator.sh` |
+| El panel desaparece al instalar y no vuelve | El reinicio del panel falló | `xfce4-panel &` |
+| El panel muestra `not found` o `Error in command` | El comando apunta a un archivo que no está instalado | `ls -l ~/.local/bin/vpn-*` y `./vpn-target-indicator.sh instalar` |
+| El panel no refresca cada 2 s | El *Generic Monitor* es antiguo: usa `/period` (segundos) en vez de `/update-period` (ms) | `estado` muestra el periodo real de cada plugin |
 | El panel no muestra nada | No hay ningún *Generic Monitor* en el panel | Añádelo en *Configuración del panel ▸ Elementos ▸ Añadir* |
 | `xfconf-query no está instalado` | Falta `xfconf` | `sudo apt install xfconf` |
 | Aparece `VPN: OFF` con la VPN conectada | La interfaz no es `tun0` o falta el proceso `openvpn` | Edita `tun0` en `vpn-indicator.sh` |
