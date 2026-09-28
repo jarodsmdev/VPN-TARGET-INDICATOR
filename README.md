@@ -13,7 +13,7 @@
 Un solo script instalable, sin dependencias de compilación, que se integra con el
 *Generic Monitor* del panel y se gestiona con un menú interactivo.
 
-[Instalación rápida](#instalación) · [Uso](#uso) · [Comandos](#opciones-de-línea-de-comandos) · [Documentación](docs/) · [Licencia](LICENSE)
+[Instalación](#instalación) · [Uso](#uso) · [Comandos](#opciones-de-línea-de-comandos) · [Migración](#migración-desde-la-versión-htb-) · [Problemas frecuentes](#problemas-frecuentes) · [Licencia](#licencia)
 
 </div>
 
@@ -41,6 +41,9 @@ target. Sin target, el panel muestra únicamente el estado de la VPN
   *Generic Monitor* ejecuta cada 2 segundos.
 - **Menú interactivo** — instalador con barra de progreso, validaciones de
   compatibilidad y desinstalación completa en un único archivo.
+- **Migración automática** — si venías de la versión `htb-*`, se borran los
+  archivos antiguos, se conservan tu target y se reasigna el panel sin que
+  tengas que hacer nada ([detalle](#migración-desde-la-versión-htb-)).
 - **No invasivo** — todo vive dentro de `$HOME`; no modifica el sistema ni
   requiere `sudo` (salvo al instalar `zenity` si falta).
 - **Color aware** — desactiva los códigos ANSI cuando la salida no es una TTY
@@ -52,15 +55,16 @@ target. Sin target, el panel muestra únicamente el estado de la VPN
 | --- | --- | --- |
 | Linux + XFCE 4 | Sí | Sin XFCE instala los scripts, pero no configura el panel |
 | Bash 4+ | Sí | |
-| `xfce4-genmon-plugin` | Sí | `Generic Monitor` del panel |
+| `xfce4-genmon-plugin` | Sí | *Generic Monitor* del panel |
+| `xfconf` (incluye `xfconf-query`) | Sí | Para leer y escribir la configuración del panel |
 | `zenity` | Se instala si falta | Diálogo de entrada del target |
 | `libnotify-bin` | Opcional | Avisos al cambiar el target |
 | Herramientas base | Sí | `iproute2` (`ip`), `procps` (`pgrep`), `gawk`, `sed`, `grep`, `coreutils` |
 
-En Debian/Ubuntu:
+En Debian/Ubuntu/Kali:
 
 ```bash
-sudo apt install xfce4-genmon-plugin zenity libnotify-bin iproute2 procps gawk
+sudo apt install xfce4-genmon-plugin xfconf zenity libnotify-bin iproute2 procps gawk
 ```
 
 ## Instalación
@@ -101,9 +105,9 @@ Al ejecutarlo sin argumentos se abre el menú:
   Elige una opción [1-3]:
 ```
 
-1. **Instalar / reinstalar** — valida el entorno, instala `zenity` si hace
-   falta, escribe los tres scripts, engancha el *Generic Monitor* y prueba el
-   indicador.
+1. **Instalar / reinstalar** — valida el entorno, migra una instalación
+   anterior si existe, instala `zenity` si hace falta, escribe los tres scripts,
+   engancha el *Generic Monitor* y prueba el indicador.
 2. **Desinstalar** — vacía el comando del plugin, borra los scripts y el
    target guardado, y opcionalmente recarga el panel.
 
@@ -171,7 +175,6 @@ rm -f ~/.local/bin/htb-indicator.sh ~/.local/bin/htb-set-target-gui \
       ~/.local/bin/htb-clear-target ~/.config/htb-panel-plugin
 ```
 
-
 ## Cómo funciona
 
 ```
@@ -198,7 +201,8 @@ plugin, está en **[docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md)**.
 | Qué | Dónde | Por defecto |
 | --- | --- | --- |
 | Interfaz de la VPN | `vpn-indicator.sh` → `tun0` | `tun0` |
-| Refresco del panel | `~/.config/vpn-panel-plugin` + `xfconf-query` | `2` segundos |
+| Periodo de refresco | `xfconf-query -c xfce4-panel -p /plugins/<id>/period` | `2` segundos |
+| ID del plugin usado | `~/.config/vpn-panel-plugin` | elegido por el instalador |
 | Emojis del panel | `vpn-indicator.sh` → `echo "<txt>🔒 …"` | `🔒` y `🎯` |
 
 Después de editar `~/.local/bin/vpn-indicator.sh`, el panel lo refleja en el
@@ -211,7 +215,8 @@ siguiente ciclo de refresco (o al reiniciar el panel con `xfce4-panel -r`).
 ```
 
 La desinstalación vacía el comando del *Generic Monitor* (dejando el resto de
-sus ajustes intactos), borra los tres scripts, el target y el archivo de estado.
+sus ajustes intactos), borra los tres scripts, el target y el archivo de
+estado, y también cualquier resto de la versión anterior (`htb-*`).
 Si queda un proceso antiguo del indicador en el panel, recarga el panel o
 cierra la sesión.
 
@@ -229,6 +234,8 @@ Resumen rápido; la guía completa está en
 | `xfconf-query no está instalado` | Falta `xfconf` | `sudo apt install xfconf` |
 | Aparece `VPN: OFF` con la VPN conectada | La interfaz no es `tun0` o falta el proceso `openvpn` | Edita `tun0` en `vpn-indicator.sh` |
 | No aparecen los avisos | Falta `libnotify-bin` | `sudo apt install libnotify-bin` |
+| El panel sigue ejecutando `htb-indicator.sh` | Instalación anterior sin migrar | `./vpn-target-indicator.sh instalar` |
+| `Todos los Generic Monitor ya están en uso` | Ningún plugin tiene el comando libre | Responde `S` para reasignar el primero, o deja otro *Generic Monitor* sin usar |
 
 ## Estructura del repositorio
 
@@ -236,15 +243,16 @@ Resumen rápido; la guía completa está en
 .
 ├── vpn-target-indicator.sh   # instalador / desinstalador (único archivo ejecutable)
 ├── docs/
-│   ├── COMO-FUNCIONA.md      # arquitectura, detección de VPN, panel
+│   ├── COMO-FUNCIONA.md      # arquitectura, detección de VPN, panel, migración
 │   └── TROUBLESHOOTING.md    # diagnóstico y soluciones
+├── .gitignore
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
 ```
 
-## Contributions
+## Contribuciones
 
 Las contribuciones son bienvenidas. Lee
 **[CONTRIBUTING.md](CONTRIBUTING.md)** y abrí un issue antes de enviar cambios
@@ -259,7 +267,7 @@ bash -n vpn-target-indicator.sh    # chequeo de sintaxis
 
 ## Licencia
 
-Distributed under the MIT License. Ver [LICENSE](LICENSE).
+Distribuido bajo la licencia MIT. Ver [LICENSE](LICENSE).
 
 El proyecto nació como un indicador para Hack The Box y se independizó de esa
 plataforma: sirve para cualquier VPN y cualquier objetivo de trabajo.
