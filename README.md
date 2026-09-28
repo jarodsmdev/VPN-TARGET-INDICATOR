@@ -164,25 +164,25 @@ curl -fsSL https://raw.githubusercontent.com/jarodsmdev/vpn-target-indicator/mai
 | `~/.config/vpn-panel-plugin` | ID del plugin del panel que quedó configurado |
 | `xfce4-panel` → `/plugins/<id>/command` | Ruta al indicador, con `period = 2` (segundos) |
 
-> ### ⚠ Comando del Generic Monitor
->
-> En *Configuración del panel ▸ Elementos ▸ Generic Monitor ▸ Editar*, el
-> campo **Comando** debe contener **únicamente** la ruta del indicador:
->
-> ```
-> /home/tu/.local/bin/vpn-indicator.sh
-> ```
->
-> **Nunca** pongas `vpn-set-target` ni `vpn-clear-target` ahí. Son los diálogos:
-> si el panel los ejecuta cada 2 segundos, se abriría una ventana tras otra y
-> parecería que el target se pide solo. El instalador detecta esa configuración
-> y la corrige, pero si lo hacés a mano, `estado` te lo dice:
->
-> ```bash
-> ./vpn-target-indicator.sh estado
-> ```
->
-> Los diálogos se abren **con un clic** sobre el indicador, no solos.
+### ⚠ Importante: el comando del Generic Monitor
+
+En *Configuración del panel ▸ Elementos ▸ Generic Monitor ▸ Editar*, el campo
+**Comando** debe contener **únicamente** la ruta del indicador:
+
+```
+/home/tu/.local/bin/vpn-indicator.sh
+```
+
+**Nunca** pongas `vpn-set-target` ni `vpn-clear-target` ahí. Son los diálogos: si
+el panel los ejecuta cada 2 segundos, se abriría una ventana tras otra y
+parecería que el target se pide solo. El instalador detecta esa configuración y
+la corrige, pero si lo hacés a mano, `estado` te lo dice:
+
+```bash
+./vpn-target-indicator.sh estado
+```
+
+Los diálogos se abren **con un clic** sobre el indicador, no solos.
 
 ## Actualizar o reinstalar
 
@@ -194,7 +194,7 @@ git pull
 La instalación es idempotente: vuelve a escribir los tres scripts, reutiliza el
 mismo *Generic Monitor* si ya está configurado y **conserva tu target**. También
 audita el panel y corrige cualquier comando mal puesto (ver
-[Comando del Generic Monitor](#-comando-del-generic-monitor)).
+[Comando del Generic Monitor](#importante-el-comando-del-generic-monitor)).
 
 Para empezar de cero sin perder el target:
 
