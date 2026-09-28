@@ -136,11 +136,41 @@ curl -fsSL https://raw.githubusercontent.com/jarodsmdev/vpn-target-indicator/mai
 | Ruta | Descripción |
 | --- | --- |
 | `~/.local/bin/vpn-indicator.sh` | Indicador del panel: emite el `<txt>` de Genmon y el `<txtclick>` |
-| `~/.local/bin/vpn-set-target` | Diálogo `zenity` para escribir/bordear el target |
+| `~/.local/bin/vpn-set-target` | Diálogo `zenity` para escribir o borrar el target |
 | `~/.local/bin/vpn-clear-target` | Borra el target y avisa por `notify-send` |
 | `~/.config/vpn-target` | Target actual (una línea con la IP) |
 | `~/.config/vpn-panel-plugin` | ID del plugin del panel que quedó configurado |
 | `xfce4-panel` → `/plugins/<id>/command` | Ruta al indicador, con `period = 2` (segundos) |
+
+## Migración desde la versión `htb-*`
+
+El proyecto nació como indicador de Hack The Box. Si venías de esa versión,
+simplemente instalá este script encima: la instalación detecta los archivos
+antiguos, los borra y **conserva tu target** (mueve `~/.config/htb-target` a
+`~/.config/vpn-target`).
+
+Los archivos que se eliminan automáticamente:
+
+| Ruta anterior | Reemplazada por |
+| --- | --- |
+| `~/.local/bin/htb-indicator.sh` | `~/.local/bin/vpn-indicator.sh` |
+| `~/.local/bin/htb-set-target-gui` | `~/.local/bin/vpn-set-target` |
+| `~/.local/bin/htb-clear-target` | `~/.local/bin/vpn-clear-target` |
+| `~/.config/htb-panel-plugin` | `~/.config/vpn-panel-plugin` |
+| `~/.config/htb-target` | `~/.config/vpn-target` (se **mueve**, no se borra) |
+
+El *Generic Monitor* que apuntaba a `htb-indicator.sh` se reasigna solo al
+indicador nuevo, sin preguntar. Si además tenías otro *Generic Monitor* en uso,
+el instalador te preguntará antes de tocarlo.
+
+Para migrar a mano, sin instalar nada:
+
+```bash
+mv ~/.config/htb-target ~/.config/vpn-target
+rm -f ~/.local/bin/htb-indicator.sh ~/.local/bin/htb-set-target-gui \
+      ~/.local/bin/htb-clear-target ~/.config/htb-panel-plugin
+```
+
 
 ## Cómo funciona
 

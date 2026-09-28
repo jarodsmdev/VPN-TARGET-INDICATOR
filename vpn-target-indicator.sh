@@ -28,8 +28,16 @@ GUI="$BASE/vpn-set-target"
 CLR="$BASE/vpn-clear-target"
 STATE_FILE="$CONFIG/vpn-panel-plugin"
 
+# Rutas de la versión anterior (prefijo htb-*), para migrarlas.
+LEG_IND="$BASE/htb-indicator.sh"
+LEG_GUI="$BASE/htb-set-target-gui"
+LEG_CLR="$BASE/htb-clear-target"
+LEG_TARGET="$CONFIG/htb-target"
+LEG_STATE="$CONFIG/htb-panel-plugin"
+
 PLUGIN_ID=""
 PANEL_MSG=""
+LEGACY_MSG=""
 
 # ------------------------------------------------
 # Presentación
@@ -219,10 +227,20 @@ genmon_command() {
     xfconf-query -c xfce4-panel -p "/plugins/$1/command" 2>/dev/null || true
 }
 
+# Lista los archivos que dejó la versión anterior (htb-*).
+legacy_files() {
+    local f
+    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_TARGET" "$LEG_STATE"; do
+        [ -e "$f" ] && printf '%s\n' "$f"
+    done
+    return 0
+}
+
 # Elige qué Generic Monitor usar. Prioridades:
 #   1) el que ya apunta a nuestro indicador
-#   2) el primero sin comando asignado
-#   3) el primero existente (preguntando antes de pisarlo)
+#   2) el que apunta al indicador de la versión anterior (se migra)
+#   3) el primero sin comando asignado
+#   4) el primero existente (preguntando antes de pisarlo)
 panel_detect() {
     PLUGIN_ID=""
     PANEL_MSG=""
@@ -245,6 +263,15 @@ panel_detect() {
         if [ "$cmd" = "$IND" ]; then
             PLUGIN_ID="${p##*/}"
             PANEL_MSG="Generic Monitor existente reutilizado."
+            return 0
+        fi
+    done
+
+    for p in $plugins; do
+        cmd="$(genmon_command "${p##*/}")"
+        if [ "$cmd" = "$LEG_IND" ]; then
+            PLUGIN_ID="${p##*/}"
+            PANEL_MSG="Migración: $PLUGIN_ID pasa de htb-indicator.sh a vpn-indicator.sh."
             return 0
         fi
     done
@@ -422,6 +449,29 @@ step_chmod() {
     chmod +x "$IND" "$GUI" "$CLR"
 }
 
+# Migra una instalación anterior (htb-*): conserva el target y borra
+# los scripts viejos, que ya no usa nadie.
+step_legacy() {
+    local f kept=0
+
+    if [ -f "$LEG_TARGET" ]; then
+        if [ -f "$TARGET_FILE" ]; then
+            kept=1
+        else
+            mv "$LEG_TARGET" "$TARGET_FILE"
+            echo "target anterior ($(cat "$TARGET_FILE")) migrado a $TARGET_FILE"
+        fi
+    fi
+
+    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_STATE"; do
+        rm -f "$f"
+    done
+
+    if [ "$kept" = 1 ]; then
+        echo "se conservó $LEG_TARGET porque ya existe $TARGET_FILE"
+    fi
+}
+
 # ------------------------------------------------
 # Pasos: panel XFCE
 # ------------------------------------------------
@@ -453,11 +503,12 @@ step_test() {
 # ------------------------------------------------
 
 step_unpanel() {
-    local plugins p
+    local plugins p cmd
     plugins="$(genmon_plugins)"
 
     for p in $plugins; do
-        if [ "$(genmon_command "${p##*/}")" = "$IND" ]; then
+        cmd="$(genmon_command "${p##*/}")"
+        if [ "$cmd" = "$IND" ] || [ "$cmd" = "$LEG_IND" ]; then
             xfconf-query \
                 -c xfce4-panel \
                 -p "/plugins/${p##*/}/command" \
@@ -472,6 +523,13 @@ step_unpanel() {
                 2>/dev/null || true
             echo "plugin" >/dev/null
         fi
+    done
+}
+
+step_rm_legacy() {
+    local f
+    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_TARGET" "$LEG_STATE"; do
+        rm -f "$f"
     done
 }
 
@@ -640,6 +698,10 @@ check_compat() {
         add_chk info "Ya hay una versión instalada: se va a actualizar."
     fi
 
+    if [ -n "$(legacy_files)" ]; then
+        add_chk info "Instalación anterior (htb-*) detectada: se migrará al formato vpn-*."
+    fi
+
     print_checks
 }
 
@@ -665,6 +727,7 @@ print_checks() {
 
 do_install() {
     local need_zenity=0
+    local need_legacy=0
     local do_panel=0
 
     section "COMPROBANDO COMPATIBILIDAD"
@@ -680,11 +743,13 @@ do_install() {
 
     command -v zenity >/dev/null 2>&1 || need_zenity=1
 
+    [ -n "$(legacy_files)" ] && need_legacy=1 || need_legacy=0
+
     panel_detect
     [ -n "$PLUGIN_ID" ] && do_panel=1
 
-    # 9 pasos fijos + zenity (si falta) - panel (si no aplica)
-    TOTAL=$((9 + need_zenity))
+    # 9 pasos fijos + zenity (si falta) + migración (si hay htb-*) - panel (si no aplica)
+    TOTAL=$((9 + need_zenity + need_legacy))
     [ "$do_panel" = 1 ] || TOTAL=$((TOTAL - 1))
     STEP=0
     DETAIL=()
@@ -693,6 +758,10 @@ do_install() {
 
     run_step "Preparando directorios"                  step_dirs
     run_step "Verificando dependencias"               step_check_deps
+
+    if [ "$need_legacy" = 1 ]; then
+        run_step "Migrando instalación anterior (htb-*)" step_legacy
+    fi
 
     if [ "$need_zenity" = 1 ]; then
         STREAM=1
@@ -759,14 +828,16 @@ do_uninstall() {
     local do_panel=0
     local do_target=0
     local do_state=0
+    local do_legacy=0
     local do_reload=0
     local had_files=0
 
     if command -v xfconf-query >/dev/null 2>&1; then
-        local plugins p
+        local plugins p cmd
         plugins="$(genmon_plugins)"
         for p in $plugins; do
-            if [ "$(genmon_command "${p##*/}")" = "$IND" ]; then
+            cmd="$(genmon_command "${p##*/}")"
+            if [ "$cmd" = "$IND" ] || [ "$cmd" = "$LEG_IND" ]; then
                 PLUGIN_ID="${p##*/}"
                 do_panel=1
                 break
@@ -776,8 +847,9 @@ do_uninstall() {
 
     [ -f "$TARGET_FILE" ] && do_target=1 || true
     [ -f "$STATE_FILE" ] && do_state=1 || true
+    [ -n "$(legacy_files)" ] && do_legacy=1 || true
 
-    if [ -f "$IND" ] || [ -f "$GUI" ] || [ -f "$CLR" ]; then
+    if [ -f "$IND" ] || [ -f "$GUI" ] || [ -f "$CLR" ] || [ "$do_legacy" = 1 ]; then
         had_files=1
     fi
 
@@ -785,7 +857,7 @@ do_uninstall() {
         do_reload=1
     fi
 
-    TOTAL=$((3 + do_panel + do_target + do_state + do_reload))
+    TOTAL=$((3 + do_panel + do_target + do_state + do_legacy + do_reload))
     STEP=0
     DETAIL=()
 
@@ -805,6 +877,10 @@ do_uninstall() {
 
     if [ "$do_state" = 1 ]; then
         run_step "Borrando vpn-panel-plugin" step_rm_state
+    fi
+
+    if [ "$do_legacy" = 1 ]; then
+        run_step "Borrando archivos htb-* (versión anterior)" step_rm_legacy
     fi
 
     if [ "$do_reload" = 1 ]; then

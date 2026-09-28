@@ -44,11 +44,17 @@ el versionado semántico ([SemVer](https://semver.org/lang/es/)).
   - `~/.config/htb-target` → `~/.config/vpn-target`
   - `~/.config/htb-panel-plugin` → `~/.config/vpn-panel-plugin`
   - `HTB-INSTALL.sh` → `vpn-target-indicator.sh`
+- El instalador migra automáticamente una instalación `htb-*`: conserva el
+  target (mueve `~/.config/htb-target`), borra los scripts antiguos y reasigna
+  sin preguntar el *Generic Monitor* que apuntaba a `htb-indicator.sh`.
+- La desinstalación también borra los restos de la versión anterior.
+- La documentación habla de "clic" y no de "clic izquierdo": `<txtclick>` del
+  *Generic Monitor* se ejecuta con cualquier clic sobre el texto.
 
 ### Notas
 
-- Los targets guardados por versiones anteriores (`~/.config/htb-target`) no se
-  migran automáticamente. Si venías de la versión anterior, mové el archivo a
-  mano: `mv ~/.config/htb-target ~/.config/vpn-target`.
+- Los targets guardados por versiones anteriores (`~/.config/htb-target`) se
+  migran solos al instalar; si prefieres hacerlo a mano:
+  `mv ~/.config/htb-target ~/.config/vpn-target`.
 
 [1.0.0]: https://github.com/jarodsmdev/vpn-target-indicator/releases/tag/v1.0.0

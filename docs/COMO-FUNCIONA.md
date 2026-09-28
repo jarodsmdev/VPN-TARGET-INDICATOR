@@ -90,8 +90,10 @@ Sin target, sólo se muestra la VPN y el tooltip invita a escribirlo.
 `panel_detect` elige el plugin del panel con este orden de prioridad:
 
 1. Un *Generic Monitor* cuyo `command` ya apunte al indicador (reinstalación).
-2. Un *Generic Monitor* sin comando asignado (reutiliza un slot libre).
-3. El primero existente, **preguntando** antes de sobrescribir su comando.
+2. Un *Generic Monitor* que apunte al indicador de la versión anterior
+   (`htb-indicator.sh`): se migra al nuevo sin preguntar.
+3. Un *Generic Monitor* sin comando asignado (reutiliza un slot libre).
+4. El primero existente, **preguntando** antes de sobrescribir su comando.
 
 Después escribe en `xfce4-panel`:
 
@@ -126,7 +128,21 @@ scripts instalados y explica cómo añadir el plugin a mano
 
 Si hay bloqueos, el instalador pide confirmación explícita antes de continuar.
 
-## 8. Barra de progreso y TTY
+## 8. Migración de la versión anterior
+
+Si existen archivos `htb-*` (`~/.local/bin/htb-indicator.sh`,
+`~/.local/bin/htb-set-target-gui`, `~/.local/bin/htb-clear-target`,
+`~/.config/htb-target`, `~/.config/htb-panel-plugin`), el instalador agrega un
+paso **Migrando instalación anterior (htb-\*)** que:
+
+1. Mueve `~/.config/htb-target` a `~/.config/vpn-target`, salvo que ya exista un
+   target nuevo (en ese caso el archivo antiguo se conserva intacto y se avisa).
+2. Borra los tres scripts antiguos y `~/.config/htb-panel-plugin`.
+
+Además, `panel_detect` reconoce un *Generic Monitor* que apunte a
+`htb-indicator.sh` y lo reasigna al indicador nuevo sin preguntar.
+
+## 9. Barra de progreso y TTY
 
 `run_step` envuelve cada paso con una barra de progreso y un spinner:
 
@@ -137,15 +153,16 @@ Si hay bloqueos, el instalador pide confirmación explícita antes de continuar.
   los `confirm_no` devuelven "no").
 - `NO_COLOR=1` desactiva todos los códigos ANSI.
 
-## 9. Desinstalación
+## 10. Desinstalación
 
 En orden inverso y sólo para lo que exista:
 
 1. Vaciar `/plugins/<id>/command` y poner `period = 0` en cada plugin que
-   apunte al indicador.
+   apunte al indicador (nuevo o antiguo).
 2. Borrar `vpn-indicator.sh`, `vpn-set-target` y `vpn-clear-target`.
 3. Borrar `~/.config/vpn-target` y `~/.config/vpn-panel-plugin`.
-4. Opcionalmente `xfce4-panel -r` para liberar el proceso antiguo.
+4. Borrar los restos de la versión anterior (`htb-*`).
+5. Opcionalmente `xfce4-panel -r` para liberar el proceso antiguo.
 
 El plugin en sí **no se elimina** del panel: se deja con el comando vacío para
 no destruir otros ajustes del usuario.
