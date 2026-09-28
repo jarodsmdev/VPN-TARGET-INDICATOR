@@ -314,6 +314,13 @@ step_indicator() {
     cat > "$IND" <<'INDICATOR_EOF'
 #!/bin/bash
 
+# En máquinas virtuales sin aceleración 3D, Mesa/EGL puede quejar-se de DRI3
+# al inicializarse. Al panel sólo le interesa lo que se imprime aquí, así que
+# forzamos render por software y silenciamos esos avisos.
+export LIBGL_ALWAYS_SOFTWARE=1
+export MESA_DEBUG=silent
+export EGL_LOG_LEVEL=fatal
+
 TARGET_FILE="$HOME/.config/vpn-target"
 GUI="$HOME/.local/bin/vpn-set-target"
 
@@ -355,6 +362,11 @@ INDICATOR_EOF
 step_gui() {
     cat > "$GUI" <<'GUI_EOF'
 #!/bin/bash
+
+# Ver nota en el indicador: silencia el ruido de Mesa/EGL en VMs sin 3D.
+export LIBGL_ALWAYS_SOFTWARE=1
+export MESA_DEBUG=silent
+export EGL_LOG_LEVEL=fatal
 
 # El target es OPCIONAL: sin archivo, el indicador funciona igual y sólo
 # muestra el estado de la VPN. Cancelar también es una respuesta válida.
@@ -401,7 +413,7 @@ TARGET=$(zenity \
     --entry-text="$CURRENT" \
     --ok-label="Guardar" \
     --cancel-label="Cancelar" \
-    --width=460) || exit 0
+    --width=460) 2>/dev/null || exit 0
 
 TARGET="$(printf '%s' "$TARGET" | tr -d '[:space:]')"
 
@@ -432,7 +444,8 @@ else
         --text="\"$TARGET\" no es una IP ni un hostname válido.
 
 Opciones:  10.10.14.5   ·   dc01   ·   dc01.lab
-Podés cancelar y seguir trabajando sin target."
+Podés cancelar y seguir trabajando sin target." \
+        2>/dev/null
 
 fi
 GUI_EOF
@@ -692,6 +705,14 @@ check_compat() {
     else
         add_chk fail "Faltan herramientas:$tools" \
             "instálalas con: sudo apt install iproute2 procps gawk sed grep coreutils"
+    fi
+
+    # --- aceleración 3D (típico de máquinas virtuales) ---
+    if ls /dev/dri/renderD* >/dev/null 2>&1; then
+        add_chk ok "Aceleración 3D disponible (/dev/dri)"
+    else
+        add_chk warn "Sin aceleración 3D: en una VM el panel puede mostrar avisos de Mesa/EGL (DRI3)." \
+            "activa 3D en la configuración de la VM, o exporta LIBGL_ALWAYS_SOFTWARE=1 en ~/.profile y reinicia sesión"
     fi
 
     # --- dependencias de la app ---
