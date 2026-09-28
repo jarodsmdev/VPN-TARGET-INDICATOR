@@ -744,8 +744,8 @@ do_install() {
     fi
 
     printf '\n'
-    printf '  %sPara escribir el target:%s clic izquierdo sobre el indicador.\n' "$B" "$R"
-    printf '  %sPara borrar el target:%s  clic izquierdo y deja el campo vacío → Aceptar.\n' "$B" "$R"
+    printf '  %sPara escribir el target:%s clic sobre el indicador.\n' "$B" "$R"
+    printf '  %sPara borrar el target:%s  clic y deja el campo vacío → Aceptar.\n' "$B" "$R"
     printf '  %sSin target:%s el indicador muestra solo %s🔒 VPN: OFF%s o %s🔒 VPN: 10.10.2.2%s.\n' \
         "$B" "$R" "$B" "$R" "$B" "$R"
     printf '\n'

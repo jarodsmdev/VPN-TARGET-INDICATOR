@@ -25,7 +25,7 @@ Un solo script instalable, sin dependencias de compilación, que se integra con 
 🔒 VPN: 10.10.14.5  │  🎯 TARGET: 10.10.14.42
 ```
 
-Un clic izquierdo sobre el indicador abre una ventana para escribir la IP del
+Un clic sobre el indicador abre una ventana para escribir la IP del
 target. Sin target, el panel muestra únicamente el estado de la VPN
 (`🔒 VPN: OFF` cuando no hay túnel).
 
@@ -109,8 +109,8 @@ Al ejecutarlo sin argumentos se abre el menú:
 
 Después de instalar, el flujo habitual es:
 
-- **Clic izquierdo** en el indicador → escribir la IP del target.
-- **Clic izquierdo + campo vacío + Aceptar** → borrar el target.
+- **Clic** en el indicador → escribir la IP del target.
+- **Clic + campo vacío + Aceptar** → borrar el target.
 - **Sin target** → el panel muestra sólo `🔒 VPN: OFF` o `🔒 VPN: 10.10.14.5`.
 
 ## Opciones de línea de comandos

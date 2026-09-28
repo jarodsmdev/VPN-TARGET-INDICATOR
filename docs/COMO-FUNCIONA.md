@@ -58,7 +58,7 @@ tráfico real.
 | --- | --- |
 | `<txt>…</txt>` | Texto que se muestra en el panel |
 | `<tool>…</tool>` | Tooltip al pasar el cursor |
-| `<txtclick>…</txtclick>` | Comando ejecutado con el clic izquierdo |
+| `<txtclick>…</txtclick>` | Comando ejecutado al hacer clic sobre el texto |
 
 Con target:
 
