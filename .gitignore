@@ -1,0 +1,26 @@
+# Logs y temporales
+*.log
+*.tmp
+*.swp
+*~
+
+# Editores
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+.Trashes
+
+# Instalaciones de prueba en HOME aislado
+/tmp/
+fakehome/
+
+# Copias locales del script
+*.orig
+*.bak
+HTB-INSTALL.sh
+htb-install.sh
