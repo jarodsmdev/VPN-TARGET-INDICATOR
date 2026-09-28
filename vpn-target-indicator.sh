@@ -18,7 +18,8 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.1.0"
+REPO_URL="https://github.com/jarodsmdev/VPN-TARGET-INDICATOR"
 
 BASE="$HOME/.local/bin"
 CONFIG="$HOME/.config"
@@ -28,16 +29,8 @@ GUI="$BASE/vpn-set-target"
 CLR="$BASE/vpn-clear-target"
 STATE_FILE="$CONFIG/vpn-panel-plugin"
 
-# Rutas de la versión anterior (prefijo htb-*), para migrarlas.
-LEG_IND="$BASE/htb-indicator.sh"
-LEG_GUI="$BASE/htb-set-target-gui"
-LEG_CLR="$BASE/htb-clear-target"
-LEG_TARGET="$CONFIG/htb-target"
-LEG_STATE="$CONFIG/htb-panel-plugin"
-
 PLUGIN_ID=""
 PANEL_MSG=""
-LEGACY_MSG=""
 
 # ------------------------------------------------
 # Presentación
@@ -227,20 +220,10 @@ genmon_command() {
     xfconf-query -c xfce4-panel -p "/plugins/$1/command" 2>/dev/null || true
 }
 
-# Lista los archivos que dejó la versión anterior (htb-*).
-legacy_files() {
-    local f
-    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_TARGET" "$LEG_STATE"; do
-        [ -e "$f" ] && printf '%s\n' "$f"
-    done
-    return 0
-}
-
 # Elige qué Generic Monitor usar. Prioridades:
 #   1) el que ya apunta a nuestro indicador
-#   2) el que apunta al indicador de la versión anterior (se migra)
-#   3) el primero sin comando asignado
-#   4) el primero existente (preguntando antes de pisarlo)
+#   2) el primero sin comando asignado
+#   3) el primero existente (preguntando antes de pisarlo)
 panel_detect() {
     PLUGIN_ID=""
     PANEL_MSG=""
@@ -263,15 +246,6 @@ panel_detect() {
         if [ "$cmd" = "$IND" ]; then
             PLUGIN_ID="${p##*/}"
             PANEL_MSG="Generic Monitor existente reutilizado."
-            return 0
-        fi
-    done
-
-    for p in $plugins; do
-        cmd="$(genmon_command "${p##*/}")"
-        if [ "$cmd" = "$LEG_IND" ]; then
-            PLUGIN_ID="${p##*/}"
-            PANEL_MSG="Migración: $PLUGIN_ID pasa de htb-indicator.sh a vpn-indicator.sh."
             return 0
         fi
     done
@@ -368,10 +342,10 @@ fi
 
 if [ -n "$TARGET" ]; then
     echo "<txt>🔒 $VPN  │  🎯 TARGET: $TARGET</txt>"
-    echo "<tool>Clic para cambiar target</tool>"
+    echo "<tool>Clic para cambiar el target (opcional)</tool>"
 else
     echo "<txt>🔒 $VPN</txt>"
-    echo "<tool>Clic para escribir target</tool>"
+    echo "<tool>Clic para escribir un target (opcional)</tool>"
 fi
 
 echo "<txtclick>$GUI</txtclick>"
@@ -382,26 +356,54 @@ step_gui() {
     cat > "$GUI" <<'GUI_EOF'
 #!/bin/bash
 
+# El target es OPCIONAL: sin archivo, el indicador funciona igual y sólo
+# muestra el estado de la VPN. Cancelar también es una respuesta válida.
+
 TARGET_FILE="$HOME/.config/vpn-target"
+LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/vpn-set-target.lock"
+
+# Evita diálogos apilados si el panel lanza este script varias veces seguidas
+# (por ejemplo, si quedó como comando de un Generic Monitor).
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    OLDPID="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
+        exit 0
+    fi
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
+    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+fi
+echo "$$" > "$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT
 
 CURRENT=""
-
 if [ -f "$TARGET_FILE" ]; then
-    CURRENT=$(cat "$TARGET_FILE")
+    CURRENT="$(cat "$TARGET_FILE")"
 fi
 
 if [ -n "$CURRENT" ]; then
     TEXT="Target actual: $CURRENT"
+    HINT="Escribí otra IP o hostname para reemplazarlo.
+Dejalo vacío y aceptá para BORRAR el target.
+Cancelar no cambia nada."
 else
-    TEXT="Sin target guardado."
+    TEXT="No hay target guardado."
+    HINT="El target es opcional: sin él el indicador sólo muestra la VPN.
+Escribí la IP o el hostname de la máquina en la que estás trabajando.
+Cancelar y no hacer nada más también está bien."
 fi
+
+TEXT="$TEXT"$'\n\n'"$HINT"
 
 TARGET=$(zenity \
     --entry \
-    --title="Target" \
-    --text="$TEXT\n\nEscribe la IP de la máquina.\nDeja el campo vacío y pulsa Aceptar para BORRAR el target." \
+    --title="Target (opcional)" \
+    --text="$TEXT" \
     --entry-text="$CURRENT" \
-    --width=450) || exit 0
+    --ok-label="Guardar" \
+    --cancel-label="Cancelar" \
+    --width=460) || exit 0
+
+TARGET="$(printf '%s' "$TARGET" | tr -d '[:space:]')"
 
 if [ -z "$TARGET" ]; then
 
@@ -412,9 +414,10 @@ if [ -z "$TARGET" ]; then
         "Target eliminado." \
         2>/dev/null || true
 
-elif [[ "$TARGET" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+elif [[ "$TARGET" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
+     [[ "$TARGET" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$ ]]; then
 
-    echo "$TARGET" > "$TARGET_FILE"
+    printf '%s\n' "$TARGET" > "$TARGET_FILE"
 
     notify-send \
         "Target" \
@@ -426,7 +429,10 @@ else
     zenity \
         --error \
         --title="Target" \
-        --text="La IP ingresada no es válida."
+        --text="\"$TARGET\" no es una IP ni un hostname válido.
+
+Opciones:  10.10.14.5   ·   dc01   ·   dc01.lab
+Podés cancelar y seguir trabajando sin target."
 
 fi
 GUI_EOF
@@ -447,29 +453,6 @@ CLEAR_EOF
 
 step_chmod() {
     chmod +x "$IND" "$GUI" "$CLR"
-}
-
-# Migra una instalación anterior (htb-*): conserva el target y borra
-# los scripts viejos, que ya no usa nadie.
-step_legacy() {
-    local f kept=0
-
-    if [ -f "$LEG_TARGET" ]; then
-        if [ -f "$TARGET_FILE" ]; then
-            kept=1
-        else
-            mv "$LEG_TARGET" "$TARGET_FILE"
-            echo "target anterior ($(cat "$TARGET_FILE")) migrado a $TARGET_FILE"
-        fi
-    fi
-
-    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_STATE"; do
-        rm -f "$f"
-    done
-
-    if [ "$kept" = 1 ]; then
-        echo "se conservó $LEG_TARGET porque ya existe $TARGET_FILE"
-    fi
 }
 
 # ------------------------------------------------
@@ -499,6 +482,60 @@ step_test() {
 }
 
 # ------------------------------------------------
+# Auditoría del panel
+#
+# Un Generic Monitor cuyo comando apunte al diálogo (vpn-set-target) abre
+# esa ventana cada refresh: el panel seLlena de diálogos y el target parece
+# "pedirse" solo. Estos helpers lo detectan y lo corrigen.
+# ------------------------------------------------
+
+# Imprime los plugins mal configurados (comando = diálogo).
+# Devuelve 0 si encontró alguno, 1 si no.
+panel_wrong_plugins() {
+    local plugins p cmd found=1
+    plugins="$(genmon_plugins)"
+
+    for p in $plugins; do
+        cmd="$(genmon_command "${p##*/}")"
+        case "$cmd" in
+            *vpn-set-target*|*vpn-clear-target*)
+                printf '  %s✘%s %s → %s%s%s\n' \
+                    "$RED" "$R" "${p##*/}" "$DIM" "$cmd" "$R"
+                found=0
+                ;;
+        esac
+    done
+
+    return "$found"
+}
+
+# Devuelve 0 si algún Generic Monitor apunta al diálogo en vez del indicador.
+panel_needs_fix() {
+    command -v xfconf-query >/dev/null 2>&1 || return 1
+    panel_wrong_plugins >/dev/null 2>&1
+}
+
+step_fix_panel() {
+    local plugins p cmd
+    plugins="$(genmon_plugins)"
+
+    for p in $plugins; do
+        cmd="$(genmon_command "${p##*/}")"
+        case "$cmd" in
+            *vpn-set-target*|*vpn-clear-target*)
+                xfconf-query \
+                    -c xfce4-panel \
+                    -p "/plugins/${p##*/}/command" \
+                    -n -t string \
+                    -s "$IND" \
+                    2>/dev/null || true
+                echo "${p##*/} corregido"
+                ;;
+        esac
+    done
+}
+
+# ------------------------------------------------
 # Pasos: desinstalación
 # ------------------------------------------------
 
@@ -508,7 +545,7 @@ step_unpanel() {
 
     for p in $plugins; do
         cmd="$(genmon_command "${p##*/}")"
-        if [ "$cmd" = "$IND" ] || [ "$cmd" = "$LEG_IND" ]; then
+        if [ "$cmd" = "$IND" ]; then
             xfconf-query \
                 -c xfce4-panel \
                 -p "/plugins/${p##*/}/command" \
@@ -523,13 +560,6 @@ step_unpanel() {
                 2>/dev/null || true
             echo "plugin" >/dev/null
         fi
-    done
-}
-
-step_rm_legacy() {
-    local f
-    for f in "$LEG_IND" "$LEG_GUI" "$LEG_CLR" "$LEG_TARGET" "$LEG_STATE"; do
-        rm -f "$f"
     done
 }
 
@@ -698,10 +728,6 @@ check_compat() {
         add_chk info "Ya hay una versión instalada: se va a actualizar."
     fi
 
-    if [ -n "$(legacy_files)" ]; then
-        add_chk info "Instalación anterior (htb-*) detectada: se migrará al formato vpn-*."
-    fi
-
     print_checks
 }
 
@@ -727,7 +753,7 @@ print_checks() {
 
 do_install() {
     local need_zenity=0
-    local need_legacy=0
+    local need_fix=0
     local do_panel=0
 
     section "COMPROBANDO COMPATIBILIDAD"
@@ -743,13 +769,23 @@ do_install() {
 
     command -v zenity >/dev/null 2>&1 || need_zenity=1
 
-    [ -n "$(legacy_files)" ] && need_legacy=1 || need_legacy=0
+    panel_needs_fix && need_fix=1 || need_fix=0
+
+    if [ "$need_fix" = 1 ]; then
+        printf '\n  %s✘ El panel tiene un Generic Monitor apuntando al diálogo:%s\n' "$RED" "$R"
+        panel_wrong_plugins
+        printf '  %sCon esa configuración el panel abre esa ventana cada 2 s.%s\n' "$YEL" "$R"
+        printf '  %sEl comando correcto es:%s %s%s\n' "$DIM" "$R" "$IND" "$R"
+        printf '  %sSe corrige automáticamente al final de la instalación.%s\n' "$DIM" "$R"
+        printf '\n'
+    fi
 
     panel_detect
     [ -n "$PLUGIN_ID" ] && do_panel=1
 
-    # 9 pasos fijos + zenity (si falta) + migración (si hay htb-*) - panel (si no aplica)
-    TOTAL=$((9 + need_zenity + need_legacy))
+    # 9 pasos fijos + zenity (si falta)
+    # + corrección del panel (si algo apunta al diálogo) - panel (si no aplica)
+    TOTAL=$((9 + need_zenity + need_fix))
     [ "$do_panel" = 1 ] || TOTAL=$((TOTAL - 1))
     STEP=0
     DETAIL=()
@@ -758,10 +794,6 @@ do_install() {
 
     run_step "Preparando directorios"                  step_dirs
     run_step "Verificando dependencias"               step_check_deps
-
-    if [ "$need_legacy" = 1 ]; then
-        run_step "Migrando instalación anterior (htb-*)" step_legacy
-    fi
 
     if [ "$need_zenity" = 1 ]; then
         STREAM=1
@@ -776,6 +808,10 @@ do_install() {
 
     if [ "$do_panel" = 1 ]; then
         run_step "Configurando Generic Monitor ($PLUGIN_ID)" step_panel
+    fi
+
+    if [ "$need_fix" = 1 ]; then
+        run_step "Corrigiendo comando del panel"        step_fix_panel
     fi
 
     run_step "Probando el indicador"                  step_test
@@ -813,8 +849,11 @@ do_install() {
     fi
 
     printf '\n'
-    printf '  %sPara escribir el target:%s clic sobre el indicador.\n' "$B" "$R"
-    printf '  %sPara borrar el target:%s  clic y deja el campo vacío → Aceptar.\n' "$B" "$R"
+    printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
+    printf '\n'
+    printf '  %sPara escribir el target:%s clic sobre el indicador (opcional).\n' "$B" "$R"
+    printf '  %sPara borrar el target:%s  clic, campo vacío y Guardar.\n' "$B" "$R"
+    printf '  %sCancelar:%s no cambia nada. El target es opcional.\n' "$B" "$R"
     printf '  %sSin target:%s el indicador muestra solo %s🔒 VPN: OFF%s o %s🔒 VPN: 10.10.2.2%s.\n' \
         "$B" "$R" "$B" "$R" "$B" "$R"
     printf '\n'
@@ -828,7 +867,6 @@ do_uninstall() {
     local do_panel=0
     local do_target=0
     local do_state=0
-    local do_legacy=0
     local do_reload=0
     local had_files=0
 
@@ -837,7 +875,7 @@ do_uninstall() {
         plugins="$(genmon_plugins)"
         for p in $plugins; do
             cmd="$(genmon_command "${p##*/}")"
-            if [ "$cmd" = "$IND" ] || [ "$cmd" = "$LEG_IND" ]; then
+            if [ "$cmd" = "$IND" ]; then
                 PLUGIN_ID="${p##*/}"
                 do_panel=1
                 break
@@ -847,9 +885,8 @@ do_uninstall() {
 
     [ -f "$TARGET_FILE" ] && do_target=1 || true
     [ -f "$STATE_FILE" ] && do_state=1 || true
-    [ -n "$(legacy_files)" ] && do_legacy=1 || true
 
-    if [ -f "$IND" ] || [ -f "$GUI" ] || [ -f "$CLR" ] || [ "$do_legacy" = 1 ]; then
+    if [ -f "$IND" ] || [ -f "$GUI" ] || [ -f "$CLR" ]; then
         had_files=1
     fi
 
@@ -857,7 +894,7 @@ do_uninstall() {
         do_reload=1
     fi
 
-    TOTAL=$((3 + do_panel + do_target + do_state + do_legacy + do_reload))
+    TOTAL=$((3 + do_panel + do_target + do_state + do_reload))
     STEP=0
     DETAIL=()
 
@@ -877,10 +914,6 @@ do_uninstall() {
 
     if [ "$do_state" = 1 ]; then
         run_step "Borrando vpn-panel-plugin" step_rm_state
-    fi
-
-    if [ "$do_legacy" = 1 ]; then
-        run_step "Borrando archivos htb-* (versión anterior)" step_rm_legacy
     fi
 
     if [ "$do_reload" = 1 ]; then
@@ -916,6 +949,81 @@ do_uninstall() {
 }
 
 # ------------------------------------------------
+# Estado / diagnóstico
+# ------------------------------------------------
+
+do_status() {
+    local plugins p cmd n=0
+
+    section "ARCHIVOS"
+
+    if [ -x "$IND" ]; then
+        n=$((n + 1)); printf '  %s✔%s %s\n' "$GRN" "$R" "$IND"
+    else
+        printf '  %s✘%s %s %s(falta)%s\n' "$RED" "$R" "$IND" "$DIM" "$R"
+    fi
+
+    if [ -x "$GUI" ]; then
+        n=$((n + 1)); printf '  %s✔%s %s\n' "$GRN" "$R" "$GUI"
+    else
+        printf '  %s✘%s %s %s(falta)%s\n' "$RED" "$R" "$GUI" "$DIM" "$R"
+    fi
+
+    if [ -x "$CLR" ]; then
+        n=$((n + 1)); printf '  %s✔%s %s\n' "$GRN" "$R" "$CLR"
+    else
+        printf '  %s✘%s %s %s(falta)%s\n' "$RED" "$R" "$CLR" "$DIM" "$R"
+    fi
+
+    printf '  %s%s/3 scripts instalados%s\n' "$DIM" "$n" "$R"
+
+    section "TARGET (opcional)"
+
+    if [ -f "$TARGET_FILE" ]; then
+        printf '  %svpn-target%s = %s\n' "$GRN" "$R" "$(cat "$TARGET_FILE")"
+    else
+        printf '  %ssin target: el panel muestra sólo el estado de la VPN%s\n' "$DIM" "$R"
+    fi
+
+    section "PANEL XFCE"
+
+    if ! command -v xfconf-query >/dev/null 2>&1; then
+        printf '  %sxfconf-query no está instalado%s\n' "$YEL" "$R"
+    elif [ -z "$(genmon_plugins)" ]; then
+        printf '  %sno hay ningún Generic Monitor en el panel%s\n' "$YEL" "$R"
+    else
+        for p in $(genmon_plugins); do
+            cmd="$(genmon_command "${p##*/}")"
+            case "$cmd" in
+                "")
+                    printf '  %s%s%s %ssin comando%s\n' "$B" "${p##*/}" "$R" "$DIM" "$R"
+                    ;;
+                *vpn-set-target*|*vpn-clear-target*)
+                    printf '  %s%s%s %s✘ apunta al diálogo: el panel lo abriría cada 2 s%s\n' \
+                        "$B" "${p##*/}" "$R" "$RED" "$R"
+                    ;;
+                *vpn-indicator.sh*)
+                    printf '  %s%s%s %s✔ indicador%s\n' "$B" "${p##*/}" "$R" "$GRN" "$R"
+                    ;;
+                *)
+                    printf '  %s%s%s %s→ %s%s\n' "$B" "${p##*/}" "$R" "$DIM" "$cmd" "$R"
+                    ;;
+            esac
+        done
+    fi
+
+    section "SALIDA DEL INDICADOR"
+
+    if [ -x "$IND" ]; then
+        "$IND" | sed 's/^/  /'
+    else
+        printf '  %sno se puede probar: %s no existe%s\n' "$YEL" "$IND" "$R"
+    fi
+
+    printf '\n  %sRepo:%s %s\n\n' "$DIM" "$R" "$REPO_URL"
+}
+
+# ------------------------------------------------
 # Menú
 # ------------------------------------------------
 
@@ -948,8 +1056,9 @@ status_line() {
 }
 
 usage() {
-    printf '  %sUso:%s %s [instalar|desinstalar|salir]\n' \
+    printf '  %sUso:%s %s [instalar|estado|desinstalar|salir]\n' \
         "$B" "$R" "$(basename "$0")"
+    printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
     printf '\n'
 }
 
@@ -962,10 +1071,13 @@ run_choice() {
         1|install|instalar|instala|i)
             do_install
             ;;
-        2|uninstall|desinstalar|desinstala|remove|d)
+        2|status|estado|diag|diagnostico)
+            do_status
+            ;;
+        3|uninstall|desinstalar|desinstala|remove|d)
             do_uninstall
             ;;
-        3|exit|salir|s|q)
+        4|exit|salir|s|q)
             bye
             ;;
         -h|--help|help|ayuda)
@@ -992,13 +1104,16 @@ main() {
         status_line
         printf '\n'
         printf '  %s1%s)  Instalar / reinstalar\n' "$B" "$R"
-        printf '  %s2%s)  Desinstalar\n' "$B" "$R"
-        printf '  %s3%s)  Salir\n' "$B" "$R"
+        printf '  %s2%s)  Estado / diagnóstico\n' "$B" "$R"
+        printf '  %s3%s)  Desinstalar\n' "$B" "$R"
+        printf '  %s4%s)  Salir\n' "$B" "$R"
         printf '\n'
-        printf '  Elige una opción [1-3]: '
-        read -r opt || opt=3
+        printf '  %sRepo:%s %s\n' "$DIM" "$R" "$REPO_URL"
+        printf '\n'
+        printf '  Elige una opción [1-4]: '
+        read -r opt || opt=4
         opt="${opt// /}"
-        [ -z "$opt" ] && opt=3
+        [ -z "$opt" ] && opt=4
 
         run_choice "$opt" && return 0
         sleep 1

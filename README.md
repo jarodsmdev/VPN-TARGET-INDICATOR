@@ -6,14 +6,17 @@
 <img src="https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white" alt="Bash">
 <img src="https://img.shields.io/badge/Licen%20se-MIT-blue?style=for-the-badge" alt="Licencia MIT">
 <img src="https://img.shields.io/badge/Plataforma-Linux-FFD700?style=for-the-badge&logo=linux&logoColor=black" alt="Linux">
-<img src="https://img.shields.io/badge/versi%C3%B3n-1.0.0-8A2BE2?style=for-the-badge" alt="Version 1.0.0">
+<img src="https://img.shields.io/badge/versi%C3%B3n-1.1.0-8A2BE2?style=for-the-badge" alt="Version 1.1.0">
 
 **Indicador de escritorio para XFCE que muestra en el panel el estado de tu VPN y la IP del target en el que estás trabajando.**
 
 Un solo script instalable, sin dependencias de compilación, que se integra con el
 *Generic Monitor* del panel y se gestiona con un menú interactivo.
 
-[Instalación](#instalación) · [Uso](#uso) · [Comandos](#opciones-de-línea-de-comandos) · [Migración](#migración-desde-la-versión-htb-) · [Problemas frecuentes](#problemas-frecuentes) · [Licencia](#licencia)
+[Instalación](#instalación) · [Uso](#uso) · [Comandos](#opciones-de-línea-de-comandos) · [Actualizar](#actualizar-o-reinstalar) · [Problemas frecuentes](#problemas-frecuentes) · [Licencia](#licencia)
+
+> El target es **opcional**. El indicador funciona y muestra el estado de la VPN
+> aunque nunca escribas una IP.
 
 </div>
 
@@ -22,28 +25,34 @@ Un solo script instalable, sin dependencias de compilación, que se integra con 
 ## ¿Qué muestra?
 
 ```
-🔒 VPN: 10.10.14.5  │  🎯 TARGET: 10.10.14.42
+🔒 VPN: 10.10.14.5  │  🎯 TARGET: dc01.lab
 ```
 
-Un clic sobre el indicador abre una ventana para escribir la IP del
-target. Sin target, el panel muestra únicamente el estado de la VPN
-(`🔒 VPN: OFF` cuando no hay túnel).
+Un clic sobre el indicador abre una ventana para escribir la IP o el hostname
+del target. **Es opcional**: si no escribís nada, el panel muestra únicamente el
+estado de la VPN (`🔒 VPN: OFF` cuando no hay túnel) y `Cancelar` siempre es una
+respuesta válida.
 
 ## Características
 
 - **Estado de la VPN en vivo** — detecta la IP de `tun0` y valida que el proceso
   `openvpn` esté corriendo y con ruta activa.
-- **Target persistente** — la IP queda guardada en `~/.config/vpn-target` y se
-  muestra en el panel junto al estado de la VPN.
-- **Un clic para escribirlo** — diálogo `zenity` con el valor actual precargado.
-  Dejar el campo vacío y aceptar **borra** el target.
+- **Target opcional y persistente** — la IP (o el hostname) queda en
+  `~/.config/vpn-target`; sin archivo, el indicador funciona igual.
+- **Un clic para escribirlo** — diálogo `zenity` con botones `Guardar` /
+  `Cancelar` y el valor actual precargado. Acepta IPv4, IPv4 con CIDR
+  (`10.10.14.0/24`) y hostnames (`dc01.lab`).
+- **Sin diálogos apilados** — un lock evita que se abran varias ventanas a la
+  vez aunque el panel lance el script varias veces.
 - **Sin recompilar nada** — el indicador es un script de Bash que el
   *Generic Monitor* ejecuta cada 2 segundos.
 - **Menú interactivo** — instalador con barra de progreso, validaciones de
-  compatibilidad y desinstalación completa en un único archivo.
-- **Migración automática** — si venías de la versión `htb-*`, se borran los
-  archivos antiguos, se conservan tu target y se reasigna el panel sin que
-  tengas que hacer nada ([detalle](#migración-desde-la-versión-htb-)).
+  compatibilidad, autodiagnóstico (`estado`) y desinstalación completa en un
+  único archivo.
+- **Auditoría del panel** — detecta un *Generic Monitor* mal configurado (por
+  ejemplo, apuntando al diálogo en vez del indicador) y lo corrige solo.
+- **Reinstalación limpia** — volvés a ejecutar `instalar` las veces que quieras:
+  reutiliza el mismo plugin del panel y conserva tu target.
 - **No invasivo** — todo vive dentro de `$HOME`; no modifica el sistema ni
   requiere `sudo` (salvo al instalar `zenity` si falta).
 - **Color aware** — desactiva los códigos ANSI cuando la salida no es una TTY
@@ -93,28 +102,36 @@ Al ejecutarlo sin argumentos se abre el menú:
 
 ```
 ==============================================
-     VPN TARGET INDICATOR  v1.0.0
+     VPN TARGET INDICATOR  v1.1.0
 ==============================================
 
   Estado: 3/3 scripts en /home/tu/.local/bin │ target 10.10.14.42
 
   1)  Instalar / reinstalar
-  2)  Desinstalar
-  3)  Salir
+  2)  Estado / diagnóstico
+  3)  Desinstalar
+  4)  Salir
 
-  Elige una opción [1-3]:
+  Repo: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR
+
+  Elige una opción [1-4]:
 ```
 
 1. **Instalar / reinstalar** — valida el entorno, migra una instalación
-   anterior si existe, instala `zenity` si hace falta, escribe los tres scripts,
-   engancha el *Generic Monitor* y prueba el indicador.
-2. **Desinstalar** — vacía el comando del plugin, borra los scripts y el
+   anterior si existe, audita y corrige el panel, instala `zenity` si hace
+   falta, escribe los tres scripts, engancha el *Generic Monitor* y prueba el
+   indicador.
+2. **Estado / diagnóstico** — muestra qué scripts están instalados, el target
+   guardado, qué *Generic Monitor* apunta a qué y cuál es la salida real del
+   indicador. Es la herramienta para diagnosticar problemas de panel.
+3. **Desinstalar** — vacía el comando del plugin, borra los scripts y el
    target guardado, y opcionalmente recarga el panel.
 
 Después de instalar, el flujo habitual es:
 
-- **Clic** en el indicador → escribir la IP del target.
-- **Clic + campo vacío + Aceptar** → borrar el target.
+- **Clic** en el indicador → escribir la IP o el hostname del target.
+- **Guardar con el campo vacío** → borrar el target.
+- **Cancelar** → no cambia nada (el target es opcional).
 - **Sin target** → el panel muestra sólo `🔒 VPN: OFF` o `🔒 VPN: 10.10.14.5`.
 
 ## Opciones de línea de comandos
@@ -124,6 +141,7 @@ automatizar o para instaladores de sistemas.
 
 ```bash
 ./vpn-target-indicator.sh instalar      # instala (alias: install, i)
+./vpn-target-indicator.sh estado        # diagnóstico (alias: status, diag)
 ./vpn-target-indicator.sh desinstalar   # desinstala (alias: uninstall, remove, d)
 ./vpn-target-indicator.sh salir         # sale (alias: exit, s, q)
 ./vpn-target-indicator.sh --help        # ayuda (alias: -h, help)
@@ -146,33 +164,43 @@ curl -fsSL https://raw.githubusercontent.com/jarodsmdev/vpn-target-indicator/mai
 | `~/.config/vpn-panel-plugin` | ID del plugin del panel que quedó configurado |
 | `xfce4-panel` → `/plugins/<id>/command` | Ruta al indicador, con `period = 2` (segundos) |
 
-## Migración desde la versión `htb-*`
+> ### ⚠ Comando del Generic Monitor
+>
+> En *Configuración del panel ▸ Elementos ▸ Generic Monitor ▸ Editar*, el
+> campo **Comando** debe contener **únicamente** la ruta del indicador:
+>
+> ```
+> /home/tu/.local/bin/vpn-indicator.sh
+> ```
+>
+> **Nunca** pongas `vpn-set-target` ni `vpn-clear-target` ahí. Son los diálogos:
+> si el panel los ejecuta cada 2 segundos, se abriría una ventana tras otra y
+> parecería que el target se pide solo. El instalador detecta esa configuración
+> y la corrige, pero si lo hacés a mano, `estado` te lo dice:
+>
+> ```bash
+> ./vpn-target-indicator.sh estado
+> ```
+>
+> Los diálogos se abren **con un clic** sobre el indicador, no solos.
 
-El proyecto nació como indicador de Hack The Box. Si venías de esa versión,
-simplemente instalá este script encima: la instalación detecta los archivos
-antiguos, los borra y **conserva tu target** (mueve `~/.config/htb-target` a
-`~/.config/vpn-target`).
-
-Los archivos que se eliminan automáticamente:
-
-| Ruta anterior | Reemplazada por |
-| --- | --- |
-| `~/.local/bin/htb-indicator.sh` | `~/.local/bin/vpn-indicator.sh` |
-| `~/.local/bin/htb-set-target-gui` | `~/.local/bin/vpn-set-target` |
-| `~/.local/bin/htb-clear-target` | `~/.local/bin/vpn-clear-target` |
-| `~/.config/htb-panel-plugin` | `~/.config/vpn-panel-plugin` |
-| `~/.config/htb-target` | `~/.config/vpn-target` (se **mueve**, no se borra) |
-
-El *Generic Monitor* que apuntaba a `htb-indicator.sh` se reasigna solo al
-indicador nuevo, sin preguntar. Si además tenías otro *Generic Monitor* en uso,
-el instalador te preguntará antes de tocarlo.
-
-Para migrar a mano, sin instalar nada:
+## Actualizar o reinstalar
 
 ```bash
-mv ~/.config/htb-target ~/.config/vpn-target
-rm -f ~/.local/bin/htb-indicator.sh ~/.local/bin/htb-set-target-gui \
-      ~/.local/bin/htb-clear-target ~/.config/htb-panel-plugin
+git pull
+./vpn-target-indicator.sh instalar
+```
+
+La instalación es idempotente: vuelve a escribir los tres scripts, reutiliza el
+mismo *Generic Monitor* si ya está configurado y **conserva tu target**. También
+audita el panel y corrige cualquier comando mal puesto (ver
+[Comando del Generic Monitor](#-comando-del-generic-monitor)).
+
+Para empezar de cero sin perder el target:
+
+```bash
+rm -f ~/.config/vpn-target    # opcional: borra el target guardado
+./vpn-target-indicator.sh instalar
 ```
 
 ## Cómo funciona
@@ -216,7 +244,7 @@ siguiente ciclo de refresco (o al reiniciar el panel con `xfce4-panel -r`).
 
 La desinstalación vacía el comando del *Generic Monitor* (dejando el resto de
 sus ajustes intactos), borra los tres scripts, el target y el archivo de
-estado, y también cualquier resto de la versión anterior (`htb-*`).
+estado y, si hace falta, los restos de una instalación previa.
 Si queda un proceso antiguo del indicador en el panel, recarga el panel o
 cierra la sesión.
 
@@ -230,12 +258,16 @@ Resumen rápido; la guía completa está en
 
 | Síntoma | Causa probable | Solución |
 | --- | --- | --- |
+| **El diálogo del target se abre solo, cada 2 s** | El *Generic Monitor* apunta a `vpn-set-target` en vez del indicador | `./vpn-target-indicator.sh instalar` lo corrige, o poné `vpn-indicator.sh` en *Editar ▸ Comando* |
 | El panel no muestra nada | No hay ningún *Generic Monitor* en el panel | Añádelo en *Configuración del panel ▸ Elementos ▸ Añadir* |
 | `xfconf-query no está instalado` | Falta `xfconf` | `sudo apt install xfconf` |
 | Aparece `VPN: OFF` con la VPN conectada | La interfaz no es `tun0` o falta el proceso `openvpn` | Edita `tun0` en `vpn-indicator.sh` |
 | No aparecen los avisos | Falta `libnotify-bin` | `sudo apt install libnotify-bin` |
-| El panel sigue ejecutando `htb-indicator.sh` | Instalación anterior sin migrar | `./vpn-target-indicator.sh instalar` |
 | `Todos los Generic Monitor ya están en uso` | Ningún plugin tiene el comando libre | Responde `S` para reasignar el primero, o deja otro *Generic Monitor* sin usar |
+
+Para diagnosticar sin adivinar, `./vpn-target-indicator.sh estado` imprime los
+scripts instalados, el target, el comando de cada *Generic Monitor* y la salida
+real del indicador.
 
 ## Estructura del repositorio
 
@@ -269,5 +301,5 @@ bash -n vpn-target-indicator.sh    # chequeo de sintaxis
 
 Distribuido bajo la licencia MIT. Ver [LICENSE](LICENSE).
 
-El proyecto nació como un indicador para Hack The Box y se independizó de esa
-plataforma: sirve para cualquier VPN y cualquier objetivo de trabajo.
+Funciona con cualquier VPN y cualquier objetivo de trabajo: no está atado a
+ninguna plataforma en particular.

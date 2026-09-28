@@ -4,7 +4,11 @@ Diagnóstico y soluciones para los problemas más habituales.
 
 ## Diagnóstico rápido
 
-Primero, probá el indicador a mano. Si imprime una línea `<txt>…</txt>`, el
+Lo primero: `./vpn-target-indicator.sh estado` (o `2` en el menú). Imprime los
+scripts instalados, el target, el comando de cada *Generic Monitor* y la salida
+real del indicador. Es la forma más rápida de ver qué está mal.
+
+Luego, probá el indicador a mano. Si imprime una línea `<txt>…</txt>`, el
 script funciona y el problema está en el panel:
 
 ```bash
@@ -25,6 +29,43 @@ xfconf-query -c xfce4-panel -lv | grep genmon
 
 Deberías ver `command` apuntando a `~/.local/bin/vpn-indicator.sh` y
 `period = 2`.
+
+---
+
+## El diálogo del target se abre solo (cada 2 segundos)
+
+**Causa:** el *Generic Monitor* del panel tiene como comando el diálogo
+(`vpn-set-target`) en lugar del indicador. El panel lo ejecuta cada 2 segundos,
+así que se abre una ventana tras otra; al aceptar una, se abre la siguiente.
+
+**Comprobación:**
+
+```bash
+./vpn-target-indicator.sh estado
+# o
+xfconf-query -c xfce4-panel -lv | grep genmon
+```
+
+Si ves `command  /home/tu/.local/bin/vpn-set-target`, esa es la causa.
+
+**Solución:** el instalador lo corrige solo:
+
+```bash
+./vpn-target-indicator.sh instalar
+```
+
+O a mano, en *Configuración del panel ▸ Elementos ▸ Generic Monitor ▸ Editar*,
+poné como **Comando**:
+
+```
+/home/tu/.local/bin/vpn-indicator.sh
+```
+
+El diálogo se abre con un **clic** sobre el indicador, no solo.
+
+> Kali trae su propio indicador de VPN en
+> `/usr/share/kali-themes/xfce4-panel-genmon-vpnip.sh`. Si ya lo usás, podés
+> dejar el nuestro apuntando sólo al target o borrar uno de los dos.
 
 ---
 

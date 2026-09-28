@@ -22,5 +22,3 @@ fakehome/
 # Copias locales del script
 *.orig
 *.bak
-HTB-INSTALL.sh
-htb-install.sh

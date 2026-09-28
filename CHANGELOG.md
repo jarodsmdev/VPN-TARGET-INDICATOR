@@ -5,6 +5,39 @@ Todas las novedades relevantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 el versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [1.1.0] - 2026-09-27
+
+### Corregido
+
+- **El diálogo del target se abría solo cada 2 segundos.** Si un *Generic
+  Monitor* del panel tenía como comando `vpn-set-target` (o `vpn-clear-target`)
+  en lugar del indicador, el panel ejecutaba el diálogo en cada refresh: se
+  acumulaban ventanas y el target parecía "pedirse" endlessly, incluso después
+  de aceptarlo. El instalador ahora lo detecta, lo avisa y lo corrige; el
+  diálogo además tiene un lock, así que nunca se apilan ventanas.
+- El diálogo mostraba los `\n` literales en vez de saltos de línea.
+- La validación del target aceptaba cualquier cuádruplo con puntos
+  (`999.999.999.999`) y rechazaba hostnames. Ahora acepta IPv4, IPv4 con CIDR y
+  hostnames, y recorta espacios.
+
+### Añadido
+
+- Menú con una opción nueva: **Estado / diagnóstico** (`estado`, `status`,
+  `diag`), que informa los scripts instalados, el target, el comando de cada
+  *Generic Monitor* y la salida real del indicador.
+- Auditoría del panel: detecta *Generic Monitor* que apuntan a los diálogos y los
+  reasigna al indicador durante la instalación.
+- El instalador muestra la URL del repositorio en el menú, en la ayuda y en el
+  diagnóstico.
+
+### Cambiado
+
+- El target es explícitamente **opcional** en toda la interfaz: título
+  `Target (opcional)`, botones `Guardar` / `Cancelar`, y un texto que aclara que
+  `Cancelar` no cambia nada.
+- Tooltips del indicador: "Clic para escribir un target (opcional)".
+- Numeración del menú: 1) instalar, 2) estado, 3) desinstalar, 4) salir.
+
 ## [1.0.0] - 2026-09-27
 
 ### Añadido
@@ -35,26 +68,8 @@ el versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
 ### Cambiado
 
-- El proyecto se independizó de Hack The Box y pasó a ser genérico: el nombre,
-  los archivos, el estado y los mensajes usan el prefijo `vpn-*` en lugar de
-  `htb-*`.
-  - `htb-indicator.sh` → `vpn-indicator.sh`
-  - `htb-set-target-gui` → `vpn-set-target`
-  - `htb-clear-target` → `vpn-clear-target`
-  - `~/.config/htb-target` → `~/.config/vpn-target`
-  - `~/.config/htb-panel-plugin` → `~/.config/vpn-panel-plugin`
-  - `HTB-INSTALL.sh` → `vpn-target-indicator.sh`
-- El instalador migra automáticamente una instalación `htb-*`: conserva el
-  target (mueve `~/.config/htb-target`), borra los scripts antiguos y reasigna
-  sin preguntar el *Generic Monitor* que apuntaba a `htb-indicator.sh`.
-- La desinstalación también borra los restos de la versión anterior.
 - La documentación habla de "clic" y no de "clic izquierdo": `<txtclick>` del
   *Generic Monitor* se ejecuta con cualquier clic sobre el texto.
 
-### Notas
-
-- Los targets guardados por versiones anteriores (`~/.config/htb-target`) se
-  migran solos al instalar; si prefieres hacerlo a mano:
-  `mv ~/.config/htb-target ~/.config/vpn-target`.
-
-[1.0.0]: https://github.com/jarodsmdev/vpn-target-indicator/releases/tag/v1.0.0
+[1.1.0]: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR/releases/tag/v1.1.0
+[1.0.0]: https://github.com/jarodsmdev/VPN-TARGET-INDICATOR/releases/tag/v1.0.0
